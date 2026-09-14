@@ -26,7 +26,7 @@ type Client struct {
 	log     *slog.Logger
 }
 
-func New(baseURL, token string, log *slog.Logger) *Client {
+func NewClient(baseURL, token string, log *slog.Logger) *Client {
 	return &Client{
 		baseURL: baseURL,
 		token:   token,

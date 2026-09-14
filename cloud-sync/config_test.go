@@ -61,11 +61,11 @@ func TestLoad_RejectsEmptyPrefixList(t *testing.T) {
 		"OPENLIST_URL": "http://x", "OPENLIST_TOKEN": "t",
 		"OPENLIST_SRC_STORAGE": "/a", "OPENLIST_DST_STORAGE": "/b",
 		"WATCH_MEDIA_DIR": "/tmp", "WATCH_ANIRSS_DIR": "/tmp",
-		"SYNC_STATUS_DIR": "/tmp",
+		"SYNC_STATUS_DIR":     "/tmp",
 		"CLEANUP_AFTER_HOURS": "72", "UPLOAD_CONCURRENCY": "2",
 		"STABILIZE_WAIT_SECONDS": "30", "POLL_INTERVAL_SECONDS": "3",
 		"TASK_TIMEOUT_SECONDS": "1800",
-		"LOG_LEVEL": "info",
+		"LOG_LEVEL":            "info",
 	}
 	for k, v := range base {
 		t.Setenv(k, v)
@@ -86,7 +86,7 @@ func TestLoad_DefaultsMinFileSize(t *testing.T) {
 		"CLEANUP_AFTER_HOURS": "72", "UPLOAD_CONCURRENCY": "2",
 		"STABILIZE_WAIT_SECONDS": "30", "POLL_INTERVAL_SECONDS": "3",
 		"TASK_TIMEOUT_SECONDS": "1800",
-		"LOG_LEVEL": "info",
+		"LOG_LEVEL":            "info",
 	}
 	for k, v := range full {
 		t.Setenv(k, v)
@@ -110,7 +110,7 @@ func TestLoad_ParsesBoolFlags(t *testing.T) {
 		"CLEANUP_AFTER_HOURS": "72", "UPLOAD_CONCURRENCY": "2",
 		"STABILIZE_WAIT_SECONDS": "30", "POLL_INTERVAL_SECONDS": "3",
 		"TASK_TIMEOUT_SECONDS": "1800",
-		"LOG_LEVEL": "info",
+		"LOG_LEVEL":            "info",
 	}
 	for k, v := range full {
 		t.Setenv(k, v)
@@ -136,7 +136,7 @@ func TestLoad_RejectsInvalidBool(t *testing.T) {
 		"CLEANUP_AFTER_HOURS": "72", "UPLOAD_CONCURRENCY": "2",
 		"STABILIZE_WAIT_SECONDS": "30", "POLL_INTERVAL_SECONDS": "3",
 		"TASK_TIMEOUT_SECONDS": "1800",
-		"LOG_LEVEL": "info",
+		"LOG_LEVEL":            "info",
 	}
 	for k, v := range full {
 		t.Setenv(k, v)

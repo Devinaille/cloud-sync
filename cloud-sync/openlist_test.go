@@ -13,7 +13,7 @@ import (
 
 func newTestClient(t *testing.T, srv *httptest.Server) *Client {
 	t.Helper()
-	return New(srv.URL, "test-token", slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	return NewClient(srv.URL, "test-token", slog.New(slog.NewJSONHandler(io.Discard, nil)))
 }
 
 func TestClient_Ping_Success(t *testing.T) {
