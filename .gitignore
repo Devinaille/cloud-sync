@@ -4,5 +4,6 @@ logs/
 .sync_status/
 cloud-sync/cloud-sync
 cloud-sync/dist/
+cloud-sync/scripts/__pycache__/
 .worktrees/
 .DS_Store
