@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: test / vet / build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: gofmt
+        working-directory: cloud-sync
+        run: |
+          if [ "$(gofmt -l . | wc -l)" -ne 0 ]; then
+            echo "gofmt drift:"
+            gofmt -l .
+            exit 1
+          fi
+
+      - name: go vet
+        working-directory: cloud-sync
+        run: go vet ./...
+
+      - name: go test
+        working-directory: cloud-sync
+        run: go test -race -count=1 ./...
+
+      - name: go build
+        working-directory: cloud-sync
+        run: CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o cloud-sync .
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-sync-linux-amd64
+          path: cloud-sync/cloud-sync
+          if-no-files-found: error
