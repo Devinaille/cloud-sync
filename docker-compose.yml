@@ -1,0 +1,258 @@
+# 云盘化媒体库 · Docker Compose（TrueNAS 部署参考）
+#
+# 部署位置：TrueNAS (host) · docker compose
+# 媒体根目录：/mnt/basic/media (ZFS 数据集)
+# 网络：单 host 同网络互通（OpenList 与 cloud-sync 通过 service 名称解析）
+#
+# 状态说明（截至 2025-09-14）：
+#   - qbittorrent / transmission / moviepilot / ani-rss / emby / openlist / strm-helper：
+#     标记为 <already_deployed>，本文件保留作为架构归档
+#   - cloud-sync：待部署（新增服务，需准备 Dockerfile）
+#
+# 使用前请：
+#   1. 替换所有 <placeholder> 为实际值
+#   2. 创建 /mnt/basic/media/{downloads,ani-rss,media,strm_media,.sync_status} 目录
+#   3. 准备 MediaInfoKeeper.dll 放入 ./emby/plugins/
+#   4. 配置各服务的 .env 密钥
+
+services:
+  # ============================================================
+  # 网盘代理（OpenList）
+  # 状态：<already_deployed>
+  # 用途：cloud-sync 通过 /api/fs/copy 推送本地媒体到 139yun
+  # ============================================================
+  openlist:
+    image: <openlist-image>:<tag>             # TODO: 替换为实际镜像（如 openlistteam/openlist:latest）
+    container_name: openlist
+    restart: unless-stopped
+    ports:
+      - "5244:5244"                            # Web UI
+    volumes:
+      - ./openlist/data:/opt/openlist/data     # 配置/数据库持久化
+      - /mnt/basic/media:/mnt/basic/media     # 同 host 原生挂载，无 NFS
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+    networks:
+      - media
+
+  # ============================================================
+  # 下载器
+  # 状态：<already_deployed>
+  # ============================================================
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+      - WEBUI_PORT=8080
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./qbittorrent/config:/config
+      - /mnt/basic/media/downloads:/downloads
+    networks:
+      - media
+
+  # 状态：<already_deployed>
+  transmission:
+    image: lscr.io/linuxserver/transmission:latest
+    container_name: transmission
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+    ports:
+      - "9091:9091"
+    volumes:
+      - ./transmission/config:/config
+      - /mnt/basic/media/downloads:/downloads
+    networks:
+      - media
+
+  # ============================================================
+  # 订阅与刮削
+  # 状态：<already_deployed>
+  # ============================================================
+  moviepilot:
+    image: jxxghp/moviepilot-v2:latest
+    container_name: moviepilot
+    restart: unless-stopped
+    ports:
+      - "3000:3000"     # Web UI
+      - "3001:3001"     # 通知/回调
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+      # 内置资源转移：源 downloads/，目标 media/
+      - MP_TRANSFER_SOURCE=/downloads
+      - MP_TRANSFER_TARGET=/media
+      # qB 连接
+      - MP_DOWNLOADER_QB_URL=http://qbittorrent:8080
+      - MP_DOWNLOADER_QB_USERNAME=<qb_username>
+      - MP_DOWNLOADER_QB_PASSWORD=<qb_password>
+      # Transmission 连接
+      - MP_DOWNLOADER_TR_URL=http://transmission:9091
+      - MP_DOWNLOADER_TR_USERNAME=<tr_username>
+      - MP_DOWNLOADER_TR_PASSWORD=<tr_password>
+      # 媒体库
+      - MP_LIBRARY_PATH=/media
+      - MP_SCRAPE_SOURCE=tmdb,bangumi
+    volumes:
+      - ./moviepilot/config:/config
+      - /mnt/basic/media/downloads:/downloads
+      - /mnt/basic/media/media:/media
+    depends_on:
+      - qbittorrent
+      - transmission
+    networks:
+      - media
+
+  # 状态：<already_deployed>
+  ani-rss:
+    image: yoursweet/ani-rss:latest
+    container_name: ani-rss
+    restart: unless-stopped
+    ports:
+      - "7789:7789"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./ani-rss/config:/config
+      - /mnt/basic/media/ani-rss:/ani-rss
+    networks:
+      - media
+
+  # ============================================================
+  # 媒体播放
+  # 状态：<already_deployed>
+  # ============================================================
+  emby:
+    image: lscr.io/linuxserver/embyserver:latest
+    container_name: emby
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+    ports:
+      - "8096:8096"
+      - "8920:8920"     # HTTPS
+      - "1900:1900/udp" # DLNA
+      - "7359:7359/udp" # Client discovery
+    volumes:
+      - ./emby/config:/config
+      - /mnt/basic/media/strm_media:/strm_media
+      - ./emby/plugins:/config/plugins
+    networks:
+      - media
+
+  # ============================================================
+  # STRM 生成（139strm）
+  # 状态：<already_deployed>
+  # 镜像名待确认（用户提供的项目名）
+  # ============================================================
+  strm-helper:
+    image: <strm-helper-image>:<tag>   # TODO: 替换为实际镜像
+    container_name: strm-helper
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+      # 移动云盘账号（与 OpenList 一致）
+      - M139_USERNAME=<139_phone>
+      - M139_PASSWORD=<139_password>
+      # 扫描配置
+      - STRM_SOURCE_PATH=/media        # 云盘内待扫描目录
+      - STRM_OUTPUT_DIR=/strm_media    # STRM 输出到本地数据集
+      - STRM_CRON_INTERVAL=300         # 5 分钟
+    volumes:
+      - /mnt/basic/media/strm_media:/strm_media
+    networks:
+      - media
+
+  # ============================================================
+  # 自动化核心：cloud-sync
+  # 监听 media/ + ani-rss/ → 调 OpenList 上传 → 标记 → 72h 清理
+  # 状态：待部署（需准备 cloud-sync/Dockerfile）
+  # ============================================================
+  cloud-sync:
+    build:
+      context: ./cloud-sync
+      dockerfile: Dockerfile
+    image: cloud-sync:1.0.0
+    container_name: cloud-sync
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+
+      # OpenList 连接（同 compose network，使用 service 名解析）
+      - OPENLIST_URL=http://openlist:5244
+      - OPENLIST_TOKEN=<openlist_admin_token>   # TODO: OpenList 后台获取
+      - OPENLIST_SRC_STORAGE=/local_media       # OpenList 内 local 存储挂载路径
+      - OPENLIST_DST_STORAGE=/139yun_media      # OpenList 内 139yun 存储挂载路径
+
+      # 监听配置
+      - WATCH_MEDIA_DIR=/mnt/basic/media/media
+      - WATCH_ANIRSS_DIR=/mnt/basic/media/ani-rss
+
+      # 同步状态
+      - SYNC_STATUS_DIR=/mnt/basic/media/.sync_status
+
+      # 清理策略
+      - CLEANUP_AFTER_HOURS=72
+      - CLEANUP_DRY_RUN=false                   # 上线确认后改为 false
+
+      # 上传配置
+      - UPLOAD_CONCURRENCY=2
+      - STABILIZE_WAIT_SECONDS=30
+      - POLL_INTERVAL_SECONDS=3
+      - TASK_TIMEOUT_SECONDS=1800
+
+      # 路径白名单（安全保护）
+      - ALLOWED_SOURCE_PREFIXES=/mnt/basic/media/media,/mnt/basic/media/ani-rss
+
+      # 校验策略
+      - REQUIRE_NFO_FOR_MEDIA=true             # media/ 路径强制要求 nfo
+      - REQUIRE_NFO_FOR_ANIRSS=false           # ani-rss/ 路径不要求 nfo
+
+      # 日志
+      - LOG_LEVEL=INFO
+      - LOG_FILE=/var/log/cloud-sync/cloud-sync.log
+    volumes:
+      # 同 host 原生挂载（TrueNAS ZFS 数据集，无 NFS）
+      # 顶层 ro 防止误删，但 .sync_status/media/ani-rss 子目录单独挂 rw
+      - /mnt/basic/media:/mnt/basic/media:ro
+      - /mnt/basic/media/.sync_status:/mnt/basic/media/.sync_status:rw
+      - /mnt/basic/media/media:/mnt/basic/media/media:rw
+      - /mnt/basic/media/ani-rss:/mnt/basic/media/ani-rss:rw
+      # 日志持久化
+      - ./cloud-sync/logs:/var/log/cloud-sync
+    networks:
+      - media
+
+  # ============================================================
+  # 告警通知（可选，Bark / 微信 / Telegram 任选其一）
+  # ============================================================
+  # bark:
+  #   image: finab/bark-server:latest
+  #   container_name: bark
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8080:8080"
+  #   networks:
+  #     - media
+
+networks:
+  media:
+    driver: bridge
+    name: media
