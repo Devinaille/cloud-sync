@@ -1,0 +1,8 @@
+.env
+*.log
+logs/
+.sync_status/
+cloud-sync/cloud-sync
+cloud-sync/dist/
+.worktrees/
+.DS_Store
