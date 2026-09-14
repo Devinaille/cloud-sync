@@ -42,7 +42,7 @@ CGO_ENABLED=0 go build -o /tmp/cloud-sync-bin .
 `scripts/mock-openlist.py` 实现了 cloud-sync 用到的三个 endpoint（`/api/fs/list`、`/api/fs/copy`、`/api/admin/task/<id>/done`），把"上传"拷贝到本地目录。
 
 ```bash
-export OPENLIST_LOCAL_SRC_DIR="$WS/media"
+export OPENLIST_LOCAL_SRC_DIR="$WS"
 export OPENLIST_LOCAL_DST_DIR="$WS/cloud"
 python3 "$(git rev-parse --show-toplevel)/cloud-sync/scripts/mock-openlist.py"
 ```
@@ -50,7 +50,7 @@ python3 "$(git rev-parse --show-toplevel)/cloud-sync/scripts/mock-openlist.py"
 预期 stdout：
 
 ```
-mock-openlist: /local_media->/tmp/cloud-sync-smoke/media  /139yun_media->/tmp/cloud-sync-smoke/cloud  port=5244
+mock-openlist: /local_media->/tmp/cloud-sync-smoke  /139yun_media->/tmp/cloud-sync-smoke/cloud  port=5244
 ```
 
 另起一个终端，先 sanity check（可选）：
@@ -116,25 +116,44 @@ ls -lh "$WS/media/Movies/SmokeTest.mkv"
 # 1. cloud-sync 日志（一条关键行）
 grep '"msg":"pipeline: synced"' "$WS/cloud-sync.log"
 
-# 2. mock 那边落地的"云盘副本"
-ls -lh "$WS/cloud/Movies/SmokeTest.mkv"
+# 2. mock 那边落地的"云盘副本"（pipeline 在 src/dst name 上加 `media/` 前缀，所以落在 cloud 的子目录）
+ls -lh "$WS/cloud/media/Movies/SmokeTest.mkv"
 
 # 3. 状态文件
 ls "$WS/.sync_status/"
 # 形如: 2026-09-14/
-cat "$WS/.sync_status"/*/Movies/SmokeTest.mkv.json
+cat "$(find "$WS/.sync_status" -name 'SmokeTest.mkv.json' | head -1)"
 # 关键字段: status=synced, has_nfo=false, cloud_path=/139yun_media/media/Movies/SmokeTest.mkv
 ```
 
 ### 7. 验证 cleanup（dry-run）
 
-第一次启动会立即跑一次 cleanup tick。日志里应出现：
+启动时 cleanup tick 会跑一次；但因为刚 sync 的记录 `cleanup_at` 是 72 小时后，**第一次 tick 看不到任何候选**。要立刻看到 `[DRY-RUN] would delete`，把记录的 `cleanup_at` 改成过去时间，再重启 cloud-sync：
 
-```json
-{"msg":"[DRY-RUN] would delete","path":"/tmp/.../Movies/SmokeTest.mkv"}
+```bash
+# Ctrl-C 当前 cloud-sync
+kill %1 2>/dev/null; wait
+
+# 把 synced 记录的 cleanup_at 改成 2020-01-01
+STATE=$(find "$WS/.sync_status" -name 'SmokeTest.mkv.json' | head -1)
+python3 -c "
+import json, pathlib
+p = pathlib.Path('$STATE'); r = json.loads(p.read_text())
+r['cleanup_at'] = '2020-01-01T00:00:00Z'
+p.write_text(json.dumps(r, indent=2))
+"
+
+# 重启 cloud-sync；启动时 cleanup tick 会立刻命中
+/tmp/cloud-sync-bin 2>&1 | tee "$WS/cloud-sync.log.2"
 ```
 
-**dry-run 不删文件**，只是打日志。要真删：先把 `CLEANUP_DRY_RUN=false` 重启，并把 `CLEANUP_AFTER_HOURS=0.001`（约 3 秒）这样才会触发；或者改 `.sync_status/<date>/Movies/SmokeTest.mkv.json` 里 `cleanup_at` 为过去时间，再重启触发 startup tick。
+应看到：
+
+```json
+{"msg":"[DRY-RUN] would delete","path":"/tmp/cloud-sync-smoke/media/Movies/SmokeTest.mkv"}
+```
+
+源文件仍在（dry-run 不删）。要真删：把 `CLEANUP_DRY_RUN=false` 重启，再做上面同样的 `cleanup_at` 改写。
 
 ### 8. 清理
 
@@ -161,7 +180,7 @@ mkdir -p "$WS"/{media/Movies,ani-rss,cloud,.sync_status}
 cd "$(dirname "$0")/.."   # cloud-sync/
 CGO_ENABLED=0 go build -o /tmp/cloud-sync-bin .
 
-export OPENLIST_LOCAL_SRC_DIR="$WS/media"
+export OPENLIST_LOCAL_SRC_DIR="$WS"
 export OPENLIST_LOCAL_DST_DIR="$WS/cloud"
 python3 scripts/mock-openlist.py &
 MOCK_PID=$!
