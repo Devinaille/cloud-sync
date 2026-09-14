@@ -22,15 +22,19 @@ type Pipeline struct {
 	up  Uploader
 	st  *StateManager
 	sem chan struct{}
+
+	inflightMu sync.Mutex
+	inflight   map[string]struct{}
 }
 
 func NewPipeline(cfg *Config, log *slog.Logger, up Uploader, st *StateManager) *Pipeline {
 	return &Pipeline{
-		cfg: cfg,
-		log: log,
-		up:  up,
-		st:  st,
-		sem: make(chan struct{}, cfg.UploadConcurrency),
+		cfg:      cfg,
+		log:      log,
+		up:       up,
+		st:       st,
+		sem:      make(chan struct{}, cfg.UploadConcurrency),
+		inflight: make(map[string]struct{}),
 	}
 }
 
@@ -95,6 +99,24 @@ func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
 	if key == "" {
 		return
 	}
+	// Per-key in-flight guard: prevent duplicate concurrent uploads for the
+	// same file. AlreadySynced below is racy when concurrency > 1 because
+	// both events can pass the check before either writes a record. The
+	// inflight set is the race-free dedup primitive.
+	p.inflightMu.Lock()
+	if _, dup := p.inflight[key]; dup {
+		p.inflightMu.Unlock()
+		p.log.Debug("pipeline: key already in flight, skipping duplicate", "key", key)
+		return
+	}
+	p.inflight[key] = struct{}{}
+	p.inflightMu.Unlock()
+	defer func() {
+		p.inflightMu.Lock()
+		delete(p.inflight, key)
+		p.inflightMu.Unlock()
+	}()
+
 	synced, err := p.st.AlreadySynced(key)
 	if err != nil {
 		p.log.Warn("pipeline: AlreadySynced check failed", "key", key, "err", err)
@@ -115,7 +137,16 @@ func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
 	// 5. upload with retry.
 	if err := p.uploadWithRetry(ctx, key, ev.Path, srcName, dstName, info, ev.Category); err != nil {
 		p.log.Error("pipeline: upload failed", "key", key, "err", err)
-		p.writeFailed(key, ev.Path, info, err, ev.Category)
+		// Only persist a "failed" record when the parent context is still
+		// active. If the parent is cancelled (shutdown / restart), the
+		// in-flight upload is an interruption, not a real failure, and a
+		// permanent failed record would block StartupScan from re-processing
+		// the file on next boot (spec §5). A task timeout uses a derived
+		// context so the parent ctx stays live and the record is still
+		// written — that is intentional and required by spec §8.4.
+		if ctx.Err() == nil {
+			p.writeFailed(key, ev.Path, info, err, ev.Category)
+		}
 	}
 }
 
@@ -147,15 +178,19 @@ func (p *Pipeline) computeKey(absPath string) (key, srcName, dstName string) {
 }
 
 func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcName, dstName string, info os.FileInfo, cat Category) error {
+	const maxAttempts = 3
 	var lastErr error
 	backoff := time.Second
-	for attempt := 1; attempt <= 3; attempt++ {
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		taskCtx, cancel := context.WithTimeout(ctx, p.cfg.TaskTimeout)
 		taskID, err := p.up.Copy(taskCtx, p.cfg.SrcStorage, srcName, p.cfg.DstStorage, dstName)
 		if err != nil {
 			cancel()
 			lastErr = err
 			p.log.Warn("pipeline: copy error, retrying", "attempt", attempt, "err", err)
+			if attempt == maxAttempts {
+				return lastErr
+			}
 			if !sleepCtx(ctx, backoff) {
 				return lastErr
 			}
@@ -205,6 +240,9 @@ func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcName, d
 			}
 		}
 	RETRY:
+		if attempt == maxAttempts {
+			return lastErr
+		}
 		if !sleepCtx(ctx, backoff) {
 			return lastErr
 		}
