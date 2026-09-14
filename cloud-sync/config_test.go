@@ -126,3 +126,24 @@ func TestLoad_ParsesBoolFlags(t *testing.T) {
 		t.Errorf("bool flags wrong: %+v", cfg)
 	}
 }
+
+func TestLoad_RejectsInvalidBool(t *testing.T) {
+	full := map[string]string{
+		"OPENLIST_URL": "http://x", "OPENLIST_TOKEN": "t",
+		"OPENLIST_SRC_STORAGE": "/a", "OPENLIST_DST_STORAGE": "/b",
+		"WATCH_MEDIA_DIR": "/tmp", "WATCH_ANIRSS_DIR": "/tmp",
+		"SYNC_STATUS_DIR": "/tmp", "ALLOWED_SOURCE_PREFIXES": "/tmp",
+		"CLEANUP_AFTER_HOURS": "72", "UPLOAD_CONCURRENCY": "2",
+		"STABILIZE_WAIT_SECONDS": "30", "POLL_INTERVAL_SECONDS": "3",
+		"TASK_TIMEOUT_SECONDS": "1800",
+		"LOG_LEVEL": "info",
+	}
+	for k, v := range full {
+		t.Setenv(k, v)
+	}
+	t.Setenv("CLEANUP_DRY_RUN", "tru")
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() expected error for CLEANUP_DRY_RUN=tru, got nil")
+	}
+}

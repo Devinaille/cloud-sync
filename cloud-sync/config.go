@@ -91,9 +91,15 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	cfg.CleanupDryRun = envBool("CLEANUP_DRY_RUN", false)
-	cfg.RequireNFOForMedia = envBool("REQUIRE_NFO_FOR_MEDIA", false)
-	cfg.RequireNFOForAniRSS = envBool("REQUIRE_NFO_FOR_ANIRSS", false)
+	if cfg.CleanupDryRun, err = envBool("CLEANUP_DRY_RUN", false); err != nil {
+		return nil, err
+	}
+	if cfg.RequireNFOForMedia, err = envBool("REQUIRE_NFO_FOR_MEDIA", false); err != nil {
+		return nil, err
+	}
+	if cfg.RequireNFOForAniRSS, err = envBool("REQUIRE_NFO_FOR_ANIRSS", false); err != nil {
+		return nil, err
+	}
 
 	// OS-level path existence check
 	for _, p := range []string{
@@ -143,14 +149,14 @@ func positiveInt(env string) (int, error) {
 	return n, nil
 }
 
-func envBool(env string, def bool) bool {
+func envBool(env string, def bool) (bool, error) {
 	v := os.Getenv(env)
 	if v == "" {
-		return def
+		return def, nil
 	}
 	b, err := strconv.ParseBool(v)
 	if err != nil {
-		return def
+		return false, fmt.Errorf("config: %s must be bool, got %q", env, v)
 	}
-	return b
+	return b, nil
 }
