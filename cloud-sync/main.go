@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 )
 
@@ -62,14 +62,12 @@ func main() {
 	scanDone := make(chan struct{})
 	go func() {
 		defer close(scanDone)
-		if err := pipeline.StartupScan(ctx); err != nil && !strings.Contains(err.Error(), "context canceled") {
+		if err := pipeline.StartupScan(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Error("startup scan error", "err", err)
 		}
 	}()
 
 	go cleanup.Run(ctx)
-
-	pipeline.Run(ctx, watcher.Events())
 
 	go func() {
 		for {
@@ -81,6 +79,8 @@ func main() {
 			}
 		}
 	}()
+
+	pipeline.Run(ctx, watcher.Events())
 
 	<-ctx.Done()
 	log.Info("shutdown signal received, exiting")
