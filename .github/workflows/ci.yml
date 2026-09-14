@@ -50,3 +50,33 @@ jobs:
           name: cloud-sync-linux-amd64
           path: cloud-sync/cloud-sync
           if-no-files-found: error
+
+  docker:
+    name: docker image build
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: cloud-sync
+          file: cloud-sync/Dockerfile
+          tags: cloud-sync:ci
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify image size (< 30 MiB)
+        run: |
+          SIZE=$(docker image inspect cloud-sync:ci --format '{{.Size}}')
+          echo "image size: $SIZE bytes"
+          LIMIT=31457280   # 30 * 1024 * 1024
+          if [ "$SIZE" -ge "$LIMIT" ]; then
+            echo "::error::image size $SIZE bytes exceeds limit $LIMIT bytes (30 MiB)"
+            exit 1
+          fi
