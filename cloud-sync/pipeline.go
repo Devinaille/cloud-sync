@@ -73,24 +73,13 @@ func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
 		return
 	}
 
-	// 2. validate: whitelist, minimum size, optional sidecar NFO.
+	// 2. validate: whitelist + minimum size.
 	if !whitelisted(ev.Path, p.cfg.AllowedPrefixes) {
 		p.log.Warn("pipeline: path not whitelisted", "path", ev.Path)
 		return
 	}
 	if info.Size() <= p.cfg.MinFileSize {
 		p.log.Info("pipeline: too small, skipping", "path", ev.Path, "size", info.Size())
-		return
-	}
-	requireNFO := false
-	if ev.Category == CatMedia && p.cfg.RequireNFOForMedia {
-		requireNFO = true
-	}
-	if ev.Category == CatAniRSS && p.cfg.RequireNFOForAniRSS {
-		requireNFO = true
-	}
-	if requireNFO && !nfoExists(ev.Path) {
-		p.log.Info("pipeline: missing nfo, skipping", "path", ev.Path)
 		return
 	}
 
@@ -135,7 +124,7 @@ func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
 	defer func() { <-p.sem }()
 
 	// 5. upload with retry.
-	if err := p.uploadWithRetry(ctx, key, ev.Path, srcName, dstName, info, ev.Category); err != nil {
+	if err := p.uploadWithRetry(ctx, key, ev.Path, srcName, dstName, info); err != nil {
 		p.log.Error("pipeline: upload failed", "key", key, "err", err)
 		// Only persist a "failed" record when the parent context is still
 		// active. If the parent is cancelled (shutdown / restart), the
@@ -145,14 +134,15 @@ func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
 		// context so the parent ctx stays live and the record is still
 		// written — that is intentional and required by spec §8.4.
 		if ctx.Err() == nil {
-			p.writeFailed(key, ev.Path, info, err, ev.Category)
+			p.writeFailed(key, ev.Path, info, err)
 		}
 	}
 }
 
 // computeKey maps an absolute source path to the state key and the OpenList
-// src/dst names. The key is the path relative to the watch root; src/dst names
-// are that relative path prefixed with the storage subdir ("media" / "ani-rss").
+// src/dst names. The key is the path relative to whichever watch root the file
+// lives under; src/dst names prefix that relative path with the corresponding
+// storage subdir ("media" for WATCH_MEDIA_DIR, "ani-rss" for WATCH_ANIRSS_DIR).
 func (p *Pipeline) computeKey(absPath string) (key, srcName, dstName string) {
 	var root, sub string
 	switch {
@@ -177,7 +167,7 @@ func (p *Pipeline) computeKey(absPath string) (key, srcName, dstName string) {
 	return
 }
 
-func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcName, dstName string, info os.FileInfo, cat Category) error {
+func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcName, dstName string, info os.FileInfo) error {
 	const maxAttempts = 3
 	var lastErr error
 	backoff := time.Second
@@ -222,8 +212,6 @@ func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcName, d
 					SrcMtime:       info.ModTime().UTC(),
 					CloudPath:      "/" + strings.TrimPrefix(p.cfg.DstStorage, "/") + "/" + dstName,
 					OpenListTaskID: taskID,
-					Category:       cat.String(),
-					HasNFO:         nfoExists(absPath),
 					SyncedAt:       now,
 					CleanupAt:      now.Add(p.cfg.CleanupAfter),
 					Status:         "synced",
@@ -249,13 +237,6 @@ func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcName, d
 		backoff = nextBackoff(backoff)
 	}
 	return lastErr
-}
-
-// nfoExists reports whether a sibling .nfo file exists next to the given
-// absolute video path.
-func nfoExists(absPath string) bool {
-	_, err := os.Stat(strings.TrimSuffix(absPath, filepath.Ext(absPath)) + ".nfo")
-	return err == nil
 }
 
 func nextBackoff(d time.Duration) time.Duration {
@@ -318,7 +299,7 @@ func whitelisted(path string, prefixes []string) bool {
 	return false
 }
 
-func (p *Pipeline) writeFailed(key, absPath string, info os.FileInfo, cause error, cat Category) {
+func (p *Pipeline) writeFailed(key, absPath string, info os.FileInfo, cause error) {
 	now := time.Now().UTC()
 	rec := &StatusRecord{
 		Key:       key,
@@ -328,7 +309,6 @@ func (p *Pipeline) writeFailed(key, absPath string, info os.FileInfo, cause erro
 		SyncedAt:  now,
 		CleanupAt: now.Add(p.cfg.CleanupAfter),
 		Status:    "failed",
-		Category:  cat.String(),
 		Error:     cause.Error(),
 	}
 	if err := p.st.Write(rec); err != nil {
@@ -353,8 +333,7 @@ func (p *Pipeline) StartupScan(ctx context.Context) error {
 			if !shouldEmit(path, info.Size(), p.cfg.MinFileSize) {
 				return nil
 			}
-			cat := detectCategory(path, p.cfg.WatchMediaDir, p.cfg.WatchAniRSSDir)
-			ev := FileEvent{Path: path, Size: info.Size(), Detected: time.Now(), Category: cat}
+			ev := FileEvent{Path: path, Size: info.Size(), Detected: time.Now()}
 			p.process(ctx, ev)
 			count++
 			return nil

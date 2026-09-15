@@ -28,8 +28,6 @@ func TestState_WriteThenAlreadySynced(t *testing.T) {
 		SrcSize:   1234,
 		SrcMtime:  now,
 		CloudPath: "/139yun_media/media/Movies/X/X.mkv",
-		Category:  "movie",
-		HasNFO:    true,
 		SyncedAt:  now,
 		CleanupAt: now.Add(72 * time.Hour),
 		Status:    "synced",

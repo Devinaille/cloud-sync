@@ -9,31 +9,6 @@ import (
 	"time"
 )
 
-func TestDetectCategory(t *testing.T) {
-	cases := []struct {
-		path, mediaRoot, aniRoot string
-		want                     Category
-	}{
-		{"/mnt/basic/media/media/Movies/X.mkv", "/mnt/basic/media/media", "/mnt/basic/media/ani-rss", CatMedia},
-		{"/mnt/basic/media/ani-rss/Anime/Y.mkv", "/mnt/basic/media/media", "/mnt/basic/media/ani-rss", CatAniRSS},
-	}
-	for _, tc := range cases {
-		got := detectCategory(tc.path, tc.mediaRoot, tc.aniRoot)
-		if got != tc.want {
-			t.Errorf("detectCategory(%q) = %d, want %d", tc.path, got, tc.want)
-		}
-	}
-}
-
-func TestCategoryString(t *testing.T) {
-	if CatMedia.String() != "movie" {
-		t.Errorf("CatMedia.String = %q, want movie", CatMedia.String())
-	}
-	if CatAniRSS.String() != "anime" {
-		t.Errorf("CatAniRSS.String = %q, want anime", CatAniRSS.String())
-	}
-}
-
 func TestShouldEmit_FilterByExtAndSize(t *testing.T) {
 	cases := []struct {
 		path string
@@ -61,7 +36,7 @@ func TestShouldEmit_FilterByExtAndSize(t *testing.T) {
 func TestNewClose_Lifecycle(t *testing.T) {
 	dir := t.TempDir()
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	w, err := NewWatcher([]string{dir}, dir, dir+"-other", 1024, log)
+	w, err := NewWatcher([]string{dir}, 1024, log)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -73,7 +48,7 @@ func TestNewClose_Lifecycle(t *testing.T) {
 func TestWatcher_EmitsMediaEvent(t *testing.T) {
 	dir := t.TempDir()
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	w, err := NewWatcher([]string{dir}, dir, dir+"-other", 1, log)
+	w, err := NewWatcher([]string{dir}, 1, log)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -89,10 +64,6 @@ func TestWatcher_EmitsMediaEvent(t *testing.T) {
 	for {
 		select {
 		case ev := <-w.Events():
-			if ev.Category != CatMedia {
-				t.Errorf("event category = %v, want %v", ev.Category, CatMedia)
-				continue
-			}
 			if ev.Size != int64(len(content)) {
 				t.Errorf("event size = %d, want %d", ev.Size, len(content))
 				continue

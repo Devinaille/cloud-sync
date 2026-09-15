@@ -10,7 +10,11 @@ import (
 )
 
 func main() {
-	cfg, err := Load()
+	cfgPath := "/config/cloud-sync.yaml"
+	if len(os.Args) > 1 {
+		cfgPath = os.Args[1]
+	}
+	cfg, err := Load(cfgPath)
 	if err != nil {
 		os.Stderr.WriteString("config error: " + err.Error() + "\n")
 		os.Exit(2)
@@ -44,7 +48,6 @@ func main() {
 
 	watcher, err := NewWatcher(
 		[]string{cfg.WatchMediaDir, cfg.WatchAniRSSDir},
-		cfg.WatchMediaDir, cfg.WatchAniRSSDir,
 		cfg.MinFileSize, log,
 	)
 	if err != nil {

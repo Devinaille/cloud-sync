@@ -18,8 +18,6 @@ type StatusRecord struct {
 	SrcMtime       time.Time  `json:"src_mtime"`
 	CloudPath      string     `json:"cloud_path"`
 	OpenListTaskID string     `json:"openlist_task_id"`
-	Category       string     `json:"category"` // "movie" | "anime"
-	HasNFO         bool       `json:"has_nfo"`
 	SyncedAt       time.Time  `json:"synced_at"`
 	CleanupAt      time.Time  `json:"cleanup_at"`
 	Status         string     `json:"status"` // "synced" | "failed" | "cleaned"

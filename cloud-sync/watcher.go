@@ -11,58 +11,35 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-type Category int
-
-const (
-	CatMedia Category = iota
-	CatAniRSS
-)
-
-func (c Category) String() string {
-	switch c {
-	case CatMedia:
-		return "movie"
-	case CatAniRSS:
-		return "anime"
-	default:
-		return "unknown"
-	}
-}
-
 type FileEvent struct {
 	Path     string
 	Size     int64
 	Detected time.Time
-	Category Category
 }
 
 type Watcher struct {
-	fsw       *fsnotify.Watcher
-	events    chan FileEvent
-	errors    chan error
-	roots     []string
-	mediaRoot string
-	aniRoot   string
-	minSize   int64
-	log       *slog.Logger
-	done      chan struct{}
+	fsw     *fsnotify.Watcher
+	events  chan FileEvent
+	errors  chan error
+	roots   []string
+	minSize int64
+	log     *slog.Logger
+	done    chan struct{}
 }
 
-func NewWatcher(roots []string, mediaRoot, aniRSSRoot string, minSize int64, log *slog.Logger) (*Watcher, error) {
+func NewWatcher(roots []string, minSize int64, log *slog.Logger) (*Watcher, error) {
 	fsw, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, fmt.Errorf("watcher: new: %w", err)
 	}
 	w := &Watcher{
-		fsw:       fsw,
-		events:    make(chan FileEvent, 1024),
-		errors:    make(chan error, 64),
-		roots:     roots,
-		mediaRoot: mediaRoot,
-		aniRoot:   aniRSSRoot,
-		minSize:   minSize,
-		log:       log,
-		done:      make(chan struct{}),
+		fsw:     fsw,
+		events:  make(chan FileEvent, 1024),
+		errors:  make(chan error, 64),
+		roots:   roots,
+		minSize: minSize,
+		log:     log,
+		done:    make(chan struct{}),
 	}
 	for _, r := range roots {
 		if err := w.addRecursive(r); err != nil {
@@ -112,7 +89,6 @@ func (w *Watcher) loop() {
 				Path:     ev.Name,
 				Size:     info.Size(),
 				Detected: time.Now(),
-				Category: detectCategory(ev.Name, w.mediaRoot, w.aniRoot),
 			}:
 			default:
 				w.log.Warn("watcher: events channel full, dropping", "path", ev.Name)
@@ -136,17 +112,6 @@ func (w *Watcher) Errors() <-chan error     { return w.errors }
 func (w *Watcher) Close() error {
 	close(w.done)
 	return w.fsw.Close()
-}
-
-func detectCategory(path, mediaRoot, aniRoot string) Category {
-	p := filepath.Clean(path)
-	if hasPrefix(p, mediaRoot) {
-		return CatMedia
-	}
-	if hasPrefix(p, aniRoot) {
-		return CatAniRSS
-	}
-	return CatMedia
 }
 
 func hasPrefix(path, prefix string) bool {

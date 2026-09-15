@@ -6,33 +6,140 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	OpenListURL         string
-	OpenListToken       string
-	SrcStorage          string
-	DstStorage          string
-	WatchMediaDir       string
-	WatchAniRSSDir      string
-	SyncStatusDir       string
-	CleanupAfter        time.Duration
-	CleanupDryRun       bool
-	UploadConcurrency   int
-	StabilizeWait       time.Duration
-	PollInterval        time.Duration
-	TaskTimeout         time.Duration
-	MinFileSize         int64
-	AllowedPrefixes     []string
-	RequireNFOForMedia  bool
-	RequireNFOForAniRSS bool
-	LogLevel            string
-	LogFile             string
+	OpenListURL       string
+	OpenListToken     string
+	SrcStorage        string
+	DstStorage        string
+	WatchMediaDir     string
+	WatchAniRSSDir    string
+	SyncStatusDir     string
+	CleanupAfter      time.Duration
+	CleanupDryRun     bool
+	UploadConcurrency int
+	StabilizeWait     time.Duration
+	PollInterval      time.Duration
+	TaskTimeout       time.Duration
+	MinFileSize       int64
+	AllowedPrefixes   []string
+	LogLevel          string
+	LogFile           string
 }
 
 const minFileSizeBytes = 100 * 1024 * 1024 // 100MB
 
-func Load() (*Config, error) {
+// fileConfig is the on-disk YAML shape. Field names map 1:1 to env names
+// (snake_case). Durations are stored as integer counts of seconds/hours so
+// yaml.v3 doesn't have to parse "30s" or "5m".
+type fileConfig struct {
+	OpenListURL        string `yaml:"openlist_url"`
+	OpenListToken      string `yaml:"openlist_token"`
+	OpenListSrcStorage string `yaml:"openlist_src_storage"`
+	OpenListDstStorage string `yaml:"openlist_dst_storage"`
+	WatchMediaDir      string `yaml:"watch_media_dir"`
+	WatchAniRSSDir     string `yaml:"watch_anirss_dir"`
+	SyncStatusDir      string `yaml:"sync_status_dir"`
+	CleanupAfterHours  int    `yaml:"cleanup_after_hours"`
+	// CleanupDryRun is a pointer so we can distinguish "user set false" from
+	// "user omitted the field". Without this, omitting the key would silently
+	// overwrite a CLEANUP_DRY_RUN env value with "false" — violating the
+	// documented "missing keys fall back to env" contract.
+	CleanupDryRun         *bool    `yaml:"cleanup_dry_run"`
+	UploadConcurrency     int      `yaml:"upload_concurrency"`
+	StabilizeWaitSeconds  int      `yaml:"stabilize_wait_seconds"`
+	PollIntervalSeconds   int      `yaml:"poll_interval_seconds"`
+	TaskTimeoutSeconds    int      `yaml:"task_timeout_seconds"`
+	AllowedSourcePrefixes []string `yaml:"allowed_source_prefixes"`
+	LogLevel              string   `yaml:"log_level"`
+	LogFile               string   `yaml:"log_file"`
+}
+
+// Load builds a Config from an optional YAML file plus process environment.
+//
+// If path is non-empty and the file exists, every key present in the file
+// overrides the corresponding env var (via os.Setenv before the env pass);
+// keys absent from the file fall back to env. If path is empty or the file
+// does not exist, Load uses only the environment.
+func Load(path string) (*Config, error) {
+	if path != "" {
+		if _, err := os.Stat(path); err == nil {
+			return loadWithFile(path)
+		}
+	}
+	return loadFromEnv()
+}
+
+func loadWithFile(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("config: read %q: %w", path, err)
+	}
+	var f fileConfig
+	dec := yaml.NewDecoder(strings.NewReader(string(data)))
+	dec.KnownFields(true)
+	if err := dec.Decode(&f); err != nil {
+		return nil, fmt.Errorf("config: yaml parse %q: %w", path, err)
+	}
+	// Push any explicitly-set (non-zero) field into the environment so the
+	// shared env-reading path handles validation uniformly.
+	if f.OpenListURL != "" {
+		os.Setenv("OPENLIST_URL", f.OpenListURL)
+	}
+	if f.OpenListToken != "" {
+		os.Setenv("OPENLIST_TOKEN", f.OpenListToken)
+	}
+	if f.OpenListSrcStorage != "" {
+		os.Setenv("OPENLIST_SRC_STORAGE", f.OpenListSrcStorage)
+	}
+	if f.OpenListDstStorage != "" {
+		os.Setenv("OPENLIST_DST_STORAGE", f.OpenListDstStorage)
+	}
+	if f.WatchMediaDir != "" {
+		os.Setenv("WATCH_MEDIA_DIR", f.WatchMediaDir)
+	}
+	if f.WatchAniRSSDir != "" {
+		os.Setenv("WATCH_ANIRSS_DIR", f.WatchAniRSSDir)
+	}
+	if f.SyncStatusDir != "" {
+		os.Setenv("SYNC_STATUS_DIR", f.SyncStatusDir)
+	}
+	if f.CleanupAfterHours != 0 {
+		os.Setenv("CLEANUP_AFTER_HOURS", strconv.Itoa(f.CleanupAfterHours))
+	}
+	if f.UploadConcurrency != 0 {
+		os.Setenv("UPLOAD_CONCURRENCY", strconv.Itoa(f.UploadConcurrency))
+	}
+	if f.StabilizeWaitSeconds != 0 {
+		os.Setenv("STABILIZE_WAIT_SECONDS", strconv.Itoa(f.StabilizeWaitSeconds))
+	}
+	if f.PollIntervalSeconds != 0 {
+		os.Setenv("POLL_INTERVAL_SECONDS", strconv.Itoa(f.PollIntervalSeconds))
+	}
+	if f.TaskTimeoutSeconds != 0 {
+		os.Setenv("TASK_TIMEOUT_SECONDS", strconv.Itoa(f.TaskTimeoutSeconds))
+	}
+	if f.LogLevel != "" {
+		os.Setenv("LOG_LEVEL", f.LogLevel)
+	}
+	if f.LogFile != "" {
+		os.Setenv("LOG_FILE", f.LogFile)
+	}
+	// Bool: only override env when the YAML actually set the key. Pointer-
+	// nil distinguishes "absent" from "explicitly false".
+	if f.CleanupDryRun != nil {
+		os.Setenv("CLEANUP_DRY_RUN", strconv.FormatBool(*f.CleanupDryRun))
+	}
+	if len(f.AllowedSourcePrefixes) > 0 {
+		os.Setenv("ALLOWED_SOURCE_PREFIXES", strings.Join(f.AllowedSourcePrefixes, ","))
+	}
+	return loadFromEnv()
+}
+
+func loadFromEnv() (*Config, error) {
 	cfg := &Config{MinFileSize: minFileSizeBytes}
 
 	strs := []struct {
@@ -92,12 +199,6 @@ func Load() (*Config, error) {
 	}
 
 	if cfg.CleanupDryRun, err = envBool("CLEANUP_DRY_RUN", false); err != nil {
-		return nil, err
-	}
-	if cfg.RequireNFOForMedia, err = envBool("REQUIRE_NFO_FOR_MEDIA", false); err != nil {
-		return nil, err
-	}
-	if cfg.RequireNFOForAniRSS, err = envBool("REQUIRE_NFO_FOR_ANIRSS", false); err != nil {
 		return nil, err
 	}
 
