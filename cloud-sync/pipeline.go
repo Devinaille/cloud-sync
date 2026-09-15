@@ -141,18 +141,18 @@ func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
 
 // computeKey maps an absolute source path to the state key and the OpenList
 // src/dst names. The key is the path relative to whichever watch root the file
-// lives under; src/dst names prefix that relative path with the corresponding
-// storage subdir ("media" for WATCH_MEDIA_DIR, "ani-rss" for WATCH_ANIRSS_DIR).
+// lives under; src/dst names prefix that relative path with the single
+// "media" storage subdir (all watch dirs share the same cloud-side layout).
 func (p *Pipeline) computeKey(absPath string) (key, srcName, dstName string) {
-	var root, sub string
-	switch {
-	case hasPrefix(absPath, p.cfg.WatchMediaDir):
-		root = p.cfg.WatchMediaDir
-		sub = "media"
-	case hasPrefix(absPath, p.cfg.WatchAniRSSDir):
-		root = p.cfg.WatchAniRSSDir
-		sub = "ani-rss"
-	default:
+	const sub = "media"
+	var root string
+	for _, r := range p.cfg.WatchDirs {
+		if hasPrefix(absPath, r) {
+			root = r
+			break
+		}
+	}
+	if root == "" {
 		p.log.Warn("pipeline: file outside watch roots", "path", absPath)
 		return "", "", ""
 	}
@@ -320,7 +320,7 @@ func (p *Pipeline) writeFailed(key, absPath string, info os.FileInfo, cause erro
 // same per-event process() used by Run(). Runs to completion before the
 // pipeline has consumed the watcher channel.
 func (p *Pipeline) StartupScan(ctx context.Context) error {
-	roots := []string{p.cfg.WatchMediaDir, p.cfg.WatchAniRSSDir}
+	roots := p.cfg.WatchDirs
 	count := 0
 	for _, root := range roots {
 		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {

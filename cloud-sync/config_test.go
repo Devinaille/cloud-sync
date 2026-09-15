@@ -12,7 +12,7 @@ func setFullEnv(t *testing.T) {
 	full := map[string]string{
 		"OPENLIST_URL": "http://x", "OPENLIST_TOKEN": "t",
 		"OPENLIST_SRC_STORAGE": "/a", "OPENLIST_DST_STORAGE": "/b",
-		"WATCH_MEDIA_DIR": "/tmp", "WATCH_ANIRSS_DIR": "/tmp",
+		"WATCH_DIRS":      "/tmp",
 		"SYNC_STATUS_DIR": "/tmp", "ALLOWED_SOURCE_PREFIXES": "/tmp",
 		"CLEANUP_AFTER_HOURS": "72", "UPLOAD_CONCURRENCY": "2",
 		"STABILIZE_WAIT_SECONDS": "30", "POLL_INTERVAL_SECONDS": "3",
@@ -29,8 +29,7 @@ func TestLoad_ReadsOpenListURL(t *testing.T) {
 	t.Setenv("OPENLIST_TOKEN", "tok")
 	t.Setenv("OPENLIST_SRC_STORAGE", "/local_media")
 	t.Setenv("OPENLIST_DST_STORAGE", "/139yun_media")
-	t.Setenv("WATCH_MEDIA_DIR", "/tmp")
-	t.Setenv("WATCH_ANIRSS_DIR", "/tmp")
+	t.Setenv("WATCH_DIRS", "/tmp")
 	t.Setenv("SYNC_STATUS_DIR", "/tmp")
 	t.Setenv("CLEANUP_AFTER_HOURS", "72")
 	t.Setenv("UPLOAD_CONCURRENCY", "2")
@@ -54,6 +53,54 @@ func TestLoad_RejectsMissingRequiredEnv(t *testing.T) {
 	_, err := Load("")
 	if err == nil {
 		t.Fatal("Load() expected error for missing required envs, got nil")
+	}
+}
+
+func TestLoad_ParsesWatchDirsCommaList(t *testing.T) {
+	setFullEnv(t)
+	t.Setenv("WATCH_DIRS", "/tmp,/var,/usr/local")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	want := []string{"/tmp", "/var", "/usr/local"}
+	if len(cfg.WatchDirs) != 3 {
+		t.Fatalf("WatchDirs len = %d, want 3 (%v)", len(cfg.WatchDirs), cfg.WatchDirs)
+	}
+	for i, w := range want {
+		if cfg.WatchDirs[i] != w {
+			t.Errorf("WatchDirs[%d] = %q, want %q", i, cfg.WatchDirs[i], w)
+		}
+	}
+}
+
+func TestLoad_RejectsEmptyWatchDirs(t *testing.T) {
+	setFullEnv(t)
+	t.Setenv("WATCH_DIRS", ", , ,")
+	_, err := Load("")
+	if err == nil {
+		t.Fatal("Load() expected error for empty WATCH_DIRS, got nil")
+	}
+}
+
+func TestLoad_FileWatchDirsOverrideEnv(t *testing.T) {
+	// Env says /tmp; YAML says the two temp dirs — file wins.
+	setFullEnv(t)
+	t.Setenv("WATCH_DIRS", "/tmp")
+	d1 := t.TempDir()
+	d2 := t.TempDir()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cloud-sync.yaml")
+	yaml := "watch_dirs:\n  - " + d1 + "\n  - " + d2 + "\n"
+	if err := os.WriteFile(path, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(cfg.WatchDirs) != 2 || cfg.WatchDirs[0] != d1 || cfg.WatchDirs[1] != d2 {
+		t.Errorf("WatchDirs = %v, want [%s %s]", cfg.WatchDirs, d1, d2)
 	}
 }
 
@@ -138,11 +185,9 @@ func TestLoad_FileOverridesEnv(t *testing.T) {
 	t.Setenv("OPENLIST_TOKEN", "tok")
 	t.Setenv("OPENLIST_SRC_STORAGE", "/a")
 	t.Setenv("OPENLIST_DST_STORAGE", "/b")
-	t.Setenv("WATCH_MEDIA_DIR", "/tmp")
-	t.Setenv("WATCH_ANIRSS_DIR", "/tmp")
+	t.Setenv("WATCH_DIRS", "/tmp")
 	t.Setenv("SYNC_STATUS_DIR", "/tmp")
 	t.Setenv("ALLOWED_SOURCE_PREFIXES", "/tmp")
-	t.Setenv("LOG_LEVEL", "info")
 	t.Setenv("CLEANUP_AFTER_HOURS", "72")
 	t.Setenv("UPLOAD_CONCURRENCY", "2")
 	t.Setenv("STABILIZE_WAIT_SECONDS", "30")

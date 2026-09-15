@@ -64,7 +64,7 @@ func newTestPipeline(t *testing.T) (*Pipeline, *mockUploader, *StateManager, str
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	cfg := &Config{
 		OpenListURL: "http://x", SrcStorage: "/local_media", DstStorage: "/139yun_media",
-		WatchMediaDir: mediaDir, WatchAniRSSDir: aniDir, SyncStatusDir: syncDir,
+		WatchDirs: []string{mediaDir, aniDir}, SyncStatusDir: syncDir,
 		CleanupAfter: 72 * time.Hour, UploadConcurrency: 2,
 		StabilizeWait: 50 * time.Millisecond, PollInterval: 10 * time.Millisecond,
 		TaskTimeout: 5 * time.Second, MinFileSize: 1024,
@@ -187,7 +187,7 @@ func TestPipeline_RetriesOnTransientCopyError(t *testing.T) {
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	cfg := &Config{
 		SrcStorage: "/local_media", DstStorage: "/139yun_media",
-		WatchMediaDir: mediaDir, WatchAniRSSDir: mediaDir, SyncStatusDir: syncDir,
+		WatchDirs: []string{mediaDir}, SyncStatusDir: syncDir,
 		UploadConcurrency: 1, StabilizeWait: 50 * time.Millisecond,
 		PollInterval: 10 * time.Millisecond, TaskTimeout: 5 * time.Second,
 		MinFileSize: 1024, AllowedPrefixes: []string{mediaDir},
@@ -301,7 +301,7 @@ func TestPipeline_NoFailedRecordOnParentCancel(t *testing.T) {
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	cfg := &Config{
 		SrcStorage: "/local_media", DstStorage: "/139yun_media",
-		WatchMediaDir: mediaDir, WatchAniRSSDir: mediaDir, SyncStatusDir: syncDir,
+		WatchDirs: []string{mediaDir}, SyncStatusDir: syncDir,
 		UploadConcurrency: 1, StabilizeWait: 50 * time.Millisecond,
 		PollInterval: 10 * time.Millisecond, TaskTimeout: 5 * time.Second,
 		MinFileSize: 1024, AllowedPrefixes: []string{mediaDir},
@@ -369,7 +369,7 @@ func TestPipeline_RetryExhaustionNoTrailingSleep(t *testing.T) {
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	cfg := &Config{
 		SrcStorage: "/local_media", DstStorage: "/139yun_media",
-		WatchMediaDir: mediaDir, WatchAniRSSDir: mediaDir, SyncStatusDir: syncDir,
+		WatchDirs: []string{mediaDir}, SyncStatusDir: syncDir,
 		UploadConcurrency: 1, StabilizeWait: 50 * time.Millisecond,
 		PollInterval: 10 * time.Millisecond, TaskTimeout: 5 * time.Second,
 		MinFileSize: 1024, AllowedPrefixes: []string{mediaDir},
@@ -457,7 +457,7 @@ func TestPipeline_DedupesConcurrentEventsForSameKey(t *testing.T) {
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	cfg := &Config{
 		SrcStorage: "/local_media", DstStorage: "/139yun_media",
-		WatchMediaDir: mediaDir, WatchAniRSSDir: mediaDir, SyncStatusDir: syncDir,
+		WatchDirs: []string{mediaDir}, SyncStatusDir: syncDir,
 		UploadConcurrency: 2,
 		StabilizeWait:     50 * time.Millisecond,
 		PollInterval:      10 * time.Millisecond,

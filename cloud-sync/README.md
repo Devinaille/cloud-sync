@@ -119,8 +119,7 @@ export OPENLIST_TOKEN=local-test-token
 export OPENLIST_SRC_STORAGE=/local_media
 export OPENLIST_DST_STORAGE=/139yun_media
 
-export WATCH_MEDIA_DIR="$WS/media"
-export WATCH_ANIRSS_DIR="$WS/ani-rss"
+export WATCH_DIRS="$WS/media,$WS/ani-rss"
 export SYNC_STATUS_DIR="$WS/.sync_status"
 export ALLOWED_SOURCE_PREFIXES="$WS/media,$WS/ani-rss"
 
@@ -240,7 +239,7 @@ YAML 与 env 同名（小写 ↔ 大写）。下表是底层 env 名：
 | `OPENLIST_URL`, `OPENLIST_TOKEN` | OpenList HTTP endpoint + admin token |
 | `OPENLIST_SRC_STORAGE` | OpenList 内 local 存储挂载路径（`/local_media`） |
 | `OPENLIST_DST_STORAGE` | OpenList 内 139yun 存储挂载路径（`/139yun_media`） |
-| `WATCH_MEDIA_DIR`, `WATCH_ANIRSS_DIR` | 监听目录的**绝对**本地路径（fsnotify 递归监听） |
+| `WATCH_DIRS` | 逗号分隔的**绝对**本地路径列表（fsnotify 递归监听每个） |
 | `SYNC_STATUS_DIR` | `.sync_status/` 绝对路径 |
 | `ALLOWED_SOURCE_PREFIXES` | 逗号分隔，cleanup 防御性白名单（必须包含两个 WATCH_DIR） |
 | `CLEANUP_AFTER_HOURS` (默认 72) | 清理延迟 |

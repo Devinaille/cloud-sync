@@ -16,15 +16,19 @@ openlist_token:       replace-with-openlist-admin-token
 openlist_src_storage: /local_media
 openlist_dst_storage: /139yun_media
 
-# Watched local directories. Both must exist.
-watch_media_dir:      /mnt/basic/media/media
-watch_anirss_dir:     /mnt/basic/media/ani-rss
+# Watched local directories. All paths must exist. fsnotify recurses into
+# each one; uploads from any of them share the same cloud-side layout
+# (under /139yun_media/media/<rel>). Add or remove entries freely.
+watch_dirs:
+  - /mnt/basic/media/media
+  - /mnt/basic/media/ani-rss
 
 # Where cloud-sync writes its .sync_status/<date>/... state.
 sync_status_dir:      /mnt/basic/media/.sync_status
 
-# Comma-separated absolute path prefixes; cleanup uses this whitelist to
-# refuse deletions outside these roots. Both watch dirs must be listed.
+# Absolute path prefixes cleanup will accept deletions under. Every entry
+# in watch_dirs above must be listed here, but the list may be broader
+# (e.g. to let cleanup also touch strm_media/ if you point watch_dirs at it).
 allowed_source_prefixes:
   - /mnt/basic/media/media
   - /mnt/basic/media/ani-rss

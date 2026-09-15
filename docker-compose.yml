@@ -22,14 +22,13 @@ services:
       - OPENLIST_SRC_STORAGE=/local_media       # mount path of OpenList's local storage
       - OPENLIST_DST_STORAGE=/139yun_media      # mount path of OpenList's 139yun storage
 
-      # Watched local directories (must exist on host)
-      - WATCH_MEDIA_DIR=/mnt/basic/media/media
-      - WATCH_ANIRSS_DIR=/mnt/basic/media/ani-rss
+      # Watched local directories (comma-separated absolute paths; must exist)
+      - WATCH_DIRS=/mnt/basic/media/media,/mnt/basic/media/ani-rss
 
       # Sync state directory (must exist on host)
       - SYNC_STATUS_DIR=/mnt/basic/media/.sync_status
 
-      # Cleanup whitelist (must include both WATCH_*_DIR values)
+      # Cleanup whitelist (must include every WATCH_DIRS entry)
       - ALLOWED_SOURCE_PREFIXES=/mnt/basic/media/media,/mnt/basic/media/ani-rss
 
       # Cleanup policy

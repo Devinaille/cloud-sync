@@ -15,8 +15,7 @@ type Config struct {
 	OpenListToken     string
 	SrcStorage        string
 	DstStorage        string
-	WatchMediaDir     string
-	WatchAniRSSDir    string
+	WatchDirs         []string
 	SyncStatusDir     string
 	CleanupAfter      time.Duration
 	CleanupDryRun     bool
@@ -36,14 +35,13 @@ const minFileSizeBytes = 100 * 1024 * 1024 // 100MB
 // (snake_case). Durations are stored as integer counts of seconds/hours so
 // yaml.v3 doesn't have to parse "30s" or "5m".
 type fileConfig struct {
-	OpenListURL        string `yaml:"openlist_url"`
-	OpenListToken      string `yaml:"openlist_token"`
-	OpenListSrcStorage string `yaml:"openlist_src_storage"`
-	OpenListDstStorage string `yaml:"openlist_dst_storage"`
-	WatchMediaDir      string `yaml:"watch_media_dir"`
-	WatchAniRSSDir     string `yaml:"watch_anirss_dir"`
-	SyncStatusDir      string `yaml:"sync_status_dir"`
-	CleanupAfterHours  int    `yaml:"cleanup_after_hours"`
+	OpenListURL        string   `yaml:"openlist_url"`
+	OpenListToken      string   `yaml:"openlist_token"`
+	OpenListSrcStorage string   `yaml:"openlist_src_storage"`
+	OpenListDstStorage string   `yaml:"openlist_dst_storage"`
+	WatchDirs          []string `yaml:"watch_dirs"`
+	SyncStatusDir      string   `yaml:"sync_status_dir"`
+	CleanupAfterHours  int      `yaml:"cleanup_after_hours"`
 	// CleanupDryRun is a pointer so we can distinguish "user set false" from
 	// "user omitted the field". Without this, omitting the key would silently
 	// overwrite a CLEANUP_DRY_RUN env value with "false" — violating the
@@ -98,11 +96,8 @@ func loadWithFile(path string) (*Config, error) {
 	if f.OpenListDstStorage != "" {
 		os.Setenv("OPENLIST_DST_STORAGE", f.OpenListDstStorage)
 	}
-	if f.WatchMediaDir != "" {
-		os.Setenv("WATCH_MEDIA_DIR", f.WatchMediaDir)
-	}
-	if f.WatchAniRSSDir != "" {
-		os.Setenv("WATCH_ANIRSS_DIR", f.WatchAniRSSDir)
+	if len(f.WatchDirs) > 0 {
+		os.Setenv("WATCH_DIRS", strings.Join(f.WatchDirs, ","))
 	}
 	if f.SyncStatusDir != "" {
 		os.Setenv("SYNC_STATUS_DIR", f.SyncStatusDir)
@@ -151,8 +146,6 @@ func loadFromEnv() (*Config, error) {
 		{"OPENLIST_TOKEN", &cfg.OpenListToken, true},
 		{"OPENLIST_SRC_STORAGE", &cfg.SrcStorage, true},
 		{"OPENLIST_DST_STORAGE", &cfg.DstStorage, true},
-		{"WATCH_MEDIA_DIR", &cfg.WatchMediaDir, true},
-		{"WATCH_ANIRSS_DIR", &cfg.WatchAniRSSDir, true},
 		{"SYNC_STATUS_DIR", &cfg.SyncStatusDir, true},
 		{"LOG_LEVEL", &cfg.LogLevel, true},
 	}
@@ -180,6 +173,21 @@ func loadFromEnv() (*Config, error) {
 		return nil, fmt.Errorf("config: ALLOWED_SOURCE_PREFIXES resolved to empty list")
 	}
 
+	// comma-split watch dirs
+	raw = os.Getenv("WATCH_DIRS")
+	if raw == "" {
+		return nil, fmt.Errorf("config: required env WATCH_DIRS is empty")
+	}
+	for _, p := range strings.Split(raw, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			cfg.WatchDirs = append(cfg.WatchDirs, p)
+		}
+	}
+	if len(cfg.WatchDirs) == 0 {
+		return nil, fmt.Errorf("config: WATCH_DIRS resolved to empty list")
+	}
+
 	// numeric durations / ints
 	var err error
 	if cfg.CleanupAfter, err = hoursDuration("CLEANUP_AFTER_HOURS"); err != nil {
@@ -203,9 +211,8 @@ func loadFromEnv() (*Config, error) {
 	}
 
 	// OS-level path existence check
-	for _, p := range []string{
-		cfg.WatchMediaDir, cfg.WatchAniRSSDir, cfg.SyncStatusDir,
-	} {
+	paths := append([]string{cfg.SyncStatusDir}, cfg.WatchDirs...)
+	for _, p := range paths {
 		if _, err := os.Stat(p); err != nil {
 			return nil, fmt.Errorf("config: path %q not accessible: %w", p, err)
 		}

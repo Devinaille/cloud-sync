@@ -29,8 +29,7 @@ cp config.example.yaml config.yaml
 $EDITOR config.yaml
 # 必改项：
 #   openlist_token        (OpenList 后台获取)
-#   watch_media_dir       (默认 /mnt/basic/media/media)
-#   watch_anirss_dir      (默认 /mnt/basic/media/ani-rss)
+#   watch_dirs            (默认 /mnt/basic/media/media + /mnt/basic/media/ani-rss)
 #   sync_status_dir       (默认 /mnt/basic/media/.sync_status)
 #   allowed_source_prefixes (必须包含两个 WATCH_*_DIR)
 ```

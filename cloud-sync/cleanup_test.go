@@ -20,7 +20,7 @@ func newTestCleanup(t *testing.T, dryRun bool) (*Cleanup, *StateManager, string)
 	_ = os.MkdirAll(syncDir, 0o755)
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	cfg := &Config{
-		WatchMediaDir: mediaDir, WatchAniRSSDir: mediaDir, SyncStatusDir: syncDir,
+		WatchDirs: []string{mediaDir}, SyncStatusDir: syncDir,
 		CleanupAfter: 72 * time.Hour, CleanupDryRun: dryRun,
 		AllowedPrefixes: []string{mediaDir},
 	}
@@ -108,7 +108,7 @@ func TestCleanup_WhitelistProtection(t *testing.T) {
 
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	cfg := &Config{
-		WatchMediaDir: outOfScope, WatchAniRSSDir: outOfScope, SyncStatusDir: syncDir,
+		WatchDirs: []string{outOfScope}, SyncStatusDir: syncDir,
 		CleanupAfter: 72 * time.Hour, CleanupDryRun: false,
 		AllowedPrefixes: []string{filepath.Join(dir, "media")}, // whitelist does NOT include outOfScope
 	}

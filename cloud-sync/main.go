@@ -24,8 +24,7 @@ func main() {
 	log.Info("cloud-sync starting",
 		"log_level", cfg.LogLevel,
 		"openlist_url", cfg.OpenListURL,
-		"watch_media", cfg.WatchMediaDir,
-		"watch_anirss", cfg.WatchAniRSSDir,
+		"watch_dirs", cfg.WatchDirs,
 		"concurrency", cfg.UploadConcurrency,
 		"cleanup_dry_run", cfg.CleanupDryRun,
 	)
@@ -47,7 +46,7 @@ func main() {
 	}
 
 	watcher, err := NewWatcher(
-		[]string{cfg.WatchMediaDir, cfg.WatchAniRSSDir},
+		cfg.WatchDirs,
 		cfg.MinFileSize, log,
 	)
 	if err != nil {
