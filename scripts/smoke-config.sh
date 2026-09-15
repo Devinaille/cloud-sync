@@ -13,8 +13,9 @@ set -euo pipefail
 
 WS=/tmp/cloud-sync-smoke-config
 BIN=/tmp/cloud-sync-bin
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-cd "$(dirname "$0")/.."
+cd "$SCRIPT_DIR/../cloud-sync"
 CGO_ENABLED=0 go build -o "$BIN" .
 
 rm -rf "$WS"
@@ -22,7 +23,7 @@ mkdir -p "$WS"/{media/Movies,ani-rss,cloud,.sync_status}
 
 export OPENLIST_LOCAL_SRC_DIR="$WS"
 export OPENLIST_LOCAL_DST_DIR="$WS/cloud"
-python3 scripts/mock-openlist.py &
+python3 "$SCRIPT_DIR/mock-openlist.py" &
 MOCK_PID=$!
 
 cleanup() {

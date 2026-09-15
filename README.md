@@ -6,9 +6,207 @@ TrueNAS docker compose 下的自动化协调器：监听本地 `media/` + `ani-r
 
 ## 子模块
 
-- [`cloud-sync/`](./cloud-sync/) — Go 实现的监听 / 上传 / 清理容器
-- `docs/superpowers/` — 设计文档与实施计划
+- [`cloud-sync/`](./cloud-sync/) — Go 实现的 cloud-sync 容器（监听 / 上传 / 清理）
+- [`config.example.yaml`](./config.example.yaml) — 配置文件模板（复制为本地副本后修改）
+- [`scripts/`](./scripts/) — 仓库级开发/调试脚本（本地 smoke test、OpenList mock）
+- [`docker-compose.yml`](./docker-compose.yml) — 生产部署 compose（只含 cloud-sync 一个 service）
 
 ## 部署
 
-参见根目录 `docker-compose.yml` 的 `cloud-sync` service。所有配置通过环境变量注入（模板：`.env.example`）。
+cloud-sync 有两种部署方式。两种都支持配置文件模式（推荐）和纯环境变量模式。
+
+### 方式 A：Docker Compose（推荐）
+
+适合已经有 Docker / TrueNAS 的环境；提供容器隔离、自动重启、统一日志（`docker compose logs`）。
+
+#### 1. 准备配置
+
+```bash
+# 复制配置模板
+cp config.example.yaml config.yaml
+
+# 编辑真实值
+$EDITOR config.yaml
+# 必改项：
+#   openlist_token        (OpenList 后台获取)
+#   watch_media_dir       (默认 /mnt/basic/media/media)
+#   watch_anirss_dir      (默认 /mnt/basic/media/ani-rss)
+#   sync_status_dir       (默认 /mnt/basic/media/.sync_status)
+#   allowed_source_prefixes (必须包含两个 WATCH_*_DIR)
+```
+
+`config.example.yaml` 里每个字段都有详细注释。
+
+#### 2. 创建 host 端目录
+
+```bash
+mkdir -p /mnt/basic/media/media /mnt/basic/media/ani-rss /mnt/basic/media/.sync_status
+```
+
+`media/` 和 `ani-rss/` 至少要存在（cloud-sync 用 fsnotify 监听）。`strm_media/` 是 139strm + Emby 的事，不需要 cloud-sync 创建。
+
+#### 3. 启动
+
+```bash
+docker compose up -d cloud-sync
+docker compose logs -f cloud-sync
+```
+
+预期首条日志（`LOG_FILE` 默认空 → stdout，由 compose 收集）：
+
+```json
+{"level":"INFO","msg":"cloud-sync starting","log_level":"INFO","openlist_url":"http://openlist:5244",...}
+{"level":"INFO","msg":"openlist ping ok"}
+```
+
+#### 4. 验证
+
+丢一个视频到 `/mnt/basic/media/media/Movies/Test.mkv`（>100 MB，MinFileSize 是硬编码的），几秒后应该看到：
+
+```bash
+docker compose exec cloud-sync ls /mnt/basic/media/.sync_status/2026-09-15/Movies/
+# Test.mkv.json
+```
+
+#### 5. 配合 sibling services
+
+cloud-sync 只依赖同 `media` Docker 网络下能解析到的 OpenList HTTP endpoint。OpenList / qBittorrent / Emby / MoviePilot 等 sibling service 由各自的 compose 文件管理——它们必须共享同一个名为 `media` 的网络：
+
+```yaml
+networks:
+  media:
+    external: true
+    name: media
+```
+
+放 `sibling-compose.yml` 里与 `docker-compose.yml` 一起 `up`。
+
+#### 6. 升级
+
+```bash
+docker compose build cloud-sync
+docker compose up -d cloud-sync
+```
+
+配置文件不会被打进镜像（挂载的），升级不丢设置。
+
+---
+
+### 方式 B：直接跑二进制
+
+适合不想用 Docker 的环境（裸 Linux server / LXC 容器 / NAS 主机 OS 直接跑）。需要 Go 1.22+ 在构建机上（或者用 release tarball）。
+
+#### 1. 构建
+
+在构建机上：
+
+```bash
+git clone https://github.com/Devinaille/cloud-sync.git
+cd cloud-sync/cloud-sync
+CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o cloud-sync .
+```
+
+产出单一二进制 `cloud-sync`（约 8 MB，静态链接）。把它 scp / rsync 到部署机（比如 `/usr/local/bin/cloud-sync`）。
+
+#### 2. 配置
+
+跟 Docker 方式用同一份 `config.example.yaml`：
+
+```bash
+mkdir -p /etc/cloud-sync
+cp config.example.yaml /etc/cloud-sync/cloud-sync.yaml
+$EDITOR /etc/cloud-sync/cloud-sync.yaml
+```
+
+确保 `config.yaml` 里的 `watch_*_dir` / `sync_status_dir` 绝对路径在部署机存在并可写。
+
+#### 3. 跑
+
+```bash
+/usr/local/bin/cloud-sync /etc/cloud-sync/cloud-sync.yaml
+```
+
+第一个位置参数是配置文件路径（默认 `/config/cloud-sync.yaml`——适合容器内；裸机部署显式传）。日志写 stdout。
+
+#### 4. systemd unit
+
+推荐用 systemd 管生命周期：
+
+```ini
+# /etc/systemd/system/cloud-sync.service
+[Unit]
+Description=cloud-sync (inotify -> OpenList -> 139yun)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloud-sync /etc/cloud-sync/cloud-sync.yaml
+Restart=on-failure
+RestartSec=5
+User=cloud-sync
+Group=cloud-sync
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/mnt/basic/media/.sync_status /mnt/basic/media/media /mnt/basic/media/ani-rss
+PrivateTmp=true
+LimitNOFILE=65536
+# inotify 需要 fsnotify 看到目录
+# (默认 kernel fs.inotify.max_user_watches=8192 已够)
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启用：
+
+```bash
+sudo useradd -r -s /usr/sbin/nologin cloud-sync
+sudo systemctl daemon-reload
+sudo systemctl enable --now cloud-sync
+sudo journalctl -u cloud-sync -f
+```
+
+`ReadWritePaths` 是关键——`ProtectSystem=strict` 默认把 `/usr`、`/boot` 设 read-only，其余仍可写；显式列路径让 cloud-sync 只能动 `/mnt/basic/media` 下三个目录。
+
+#### 5. 升级
+
+```bash
+# 构建机
+CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o cloud-sync .
+rsync cloud-sync deploy-host:/usr/local/bin/cloud-sync.new
+
+# 部署机
+sudo systemctl stop cloud-sync
+sudo install -m 0755 /usr/local/bin/cloud-sync.new /usr/local/bin/cloud-sync
+sudo systemctl start cloud-sync
+```
+
+`config.yaml` 在 `/etc/cloud-sync/`，独立于二进制。
+
+---
+
+## 本地开发/测试
+
+见 [`cloud-sync/README.md`](./cloud-sync/README.md)（开发视角：build / test / 本地 smoke / 配置细节）。
+
+一键 smoke 端到端（不需要真 OpenList）：
+
+```bash
+./scripts/smoke.sh           # 纯 env 模式
+./scripts/smoke-config.sh    # YAML 配置文件模式
+```
+
+## CI
+
+每次 push 到 `main` 或 PR，GitHub Actions 跑：
+
+- `gofmt -l cloud-sync/` 漂移检查
+- `go vet ./...`
+- `go test -race -count=1 ./...`
+- `CGO_ENABLED=0 GOOS=linux go build` + 上传 binary artifact
+- `docker build`（`golang:1.22-alpine` → `distroless/static-debian12:nonroot`） + size 断言 `< 30 MiB`
+
+详见 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)。

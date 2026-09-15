@@ -41,8 +41,8 @@ docker compose restart cloud-sync
 
 两套 smoke 脚本，区别在配置来源：
 
-- `scripts/smoke.sh` —— 纯 env 模式（演示传统部署）
-- `scripts/smoke-config.sh` —— YAML 配置模式（演示推荐部署）
+- `../scripts/smoke.sh` —— 纯 env 模式（演示传统部署）
+- `../scripts/smoke-config.sh` —— YAML 配置模式（演示推荐部署）
 
 两者都重建二进制、启动 mock、投放 120 MiB 测试文件、验证 `pipeline: synced` 日志、云盘副本落地、状态记录、cleanup dry-run。整段约 15–20 秒。
 
@@ -56,7 +56,7 @@ docker compose restart cloud-sync
 
 ```bash
 cd cloud-sync
-./scripts/smoke-config.sh
+../scripts/smoke-config.sh
 ```
 
 预期末尾：`OK`。日志片段：
@@ -75,7 +75,7 @@ OK
 
 ### 手工步骤（env 模式，step-by-step）
 
-跟 `scripts/smoke.sh` 等价，适合理解细节。
+跟 `../scripts/smoke.sh` 等价，适合理解细节。
 
 #### 1. 准备临时工作区
 
@@ -95,12 +95,12 @@ CGO_ENABLED=0 go build -o /tmp/cloud-sync-bin .
 
 #### 3. 启动本地 OpenList mock
 
-`scripts/mock-openlist.py` 实现 cloud-sync 用到的三个 endpoint（`/api/fs/list`、`/api/fs/copy`、`/api/admin/task/<id>/done`），把"上传"拷贝到本地目录。
+`../scripts/mock-openlist.py` 实现 cloud-sync 用到的三个 endpoint（`/api/fs/list`、`/api/fs/copy`、`/api/admin/task/<id>/done`），把"上传"拷贝到本地目录。
 
 ```bash
 export OPENLIST_LOCAL_SRC_DIR="$WS"
 export OPENLIST_LOCAL_DST_DIR="$WS/cloud"
-python3 scripts/mock-openlist.py
+python3 ../scripts/mock-openlist.py
 ```
 
 另开一个终端 sanity check：
