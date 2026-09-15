@@ -1,0 +1,51 @@
+# cloud-sync configuration example.
+#
+# Copy to /config/cloud-sync.yaml in the container, edit, and restart.
+# Anything you set here overrides the corresponding environment variable; keys
+# you omit here fall back to the env. If this file is absent, only the
+# environment is used (legacy deploys keep working).
+#
+# Field names map 1:1 to the env-var names documented in cloud-sync/README.md —
+# just lowercased. The startup loader is strict: typos in field names produce
+# an error so you don't silently inherit defaults.
+
+# OpenList HTTP endpoint and admin token.
+openlist_url:         http://openlist:5244
+openlist_token:       replace-with-openlist-admin-token
+# OpenList storage mount paths (configured inside OpenList itself).
+openlist_src_storage: /local_media
+openlist_dst_storage: /139yun_media
+
+# Watched local directories. Both must exist.
+watch_media_dir:      /mnt/basic/media/media
+watch_anirss_dir:     /mnt/basic/media/ani-rss
+
+# Where cloud-sync writes its .sync_status/<date>/... state.
+sync_status_dir:      /mnt/basic/media/.sync_status
+
+# Comma-separated absolute path prefixes; cleanup uses this whitelist to
+# refuse deletions outside these roots. Both watch dirs must be listed.
+allowed_source_prefixes:
+  - /mnt/basic/media/media
+  - /mnt/basic/media/ani-rss
+
+# Cleanup policy. after_hours counts from a successful upload; the local
+# video is removed N hours later. NFO / poster / subtitle sidecars (if any)
+# are not touched. First deploy: keep dry_run=true and tail the log for
+# "[DRY-RUN] would delete" entries to confirm the paths before flipping.
+cleanup_after_hours: 72
+cleanup_dry_run:     true
+
+# Upload pipeline.
+upload_concurrency:        2
+# Stabilize window (seconds) — wait until size+mtime unchanged this long.
+stabilize_wait_seconds:    30
+# OpenList task poll interval (seconds).
+poll_interval_seconds:     3
+# Per-task timeout (seconds). After this, the task is marked failed and the
+# upload is retried (up to 3 attempts total).
+task_timeout_seconds:      1800
+
+# Logging.
+log_level: info            # debug | info | warn | error
+log_file:  ""              # empty = stdout; otherwise absolute path; parent dir auto-created

@@ -221,22 +221,15 @@ services:
       # 路径白名单（安全保护）
       - ALLOWED_SOURCE_PREFIXES=/mnt/basic/media/media,/mnt/basic/media/ani-rss
 
-      # 校验策略
-      - REQUIRE_NFO_FOR_MEDIA=true             # media/ 路径强制要求 nfo
-      - REQUIRE_NFO_FOR_ANIRSS=false           # ani-rss/ 路径不要求 nfo
-
       # 日志
       - LOG_LEVEL=INFO
-      - LOG_FILE=/var/log/cloud-sync/cloud-sync.log
+      - LOG_FILE=                                # 空 = stdout，由 docker compose 收集
     volumes:
-      # 同 host 原生挂载（TrueNAS ZFS 数据集，无 NFS）
-      # 顶层 ro 防止误删，但 .sync_status/media/ani-rss 子目录单独挂 rw
-      - /mnt/basic/media:/mnt/basic/media:ro
-      - /mnt/basic/media/.sync_status:/mnt/basic/media/.sync_status:rw
-      - /mnt/basic/media/media:/mnt/basic/media/media:rw
-      - /mnt/basic/media/ani-rss:/mnt/basic/media/ani-rss:rw
-      # 日志持久化
-      - ./cloud-sync/logs:/var/log/cloud-sync
+      # ZFS 数据集（cloud-sync 对其有写权：写 .sync_status、清理视频文件）。
+      # 防误删由应用层 ALLOWED_SOURCE_PREFIXES + cleanup 白名单把关。
+      - /mnt/basic/media:/mnt/basic/media:rw
+      # 配置文件（推荐方式；用 config.example.yaml 起步，按需修改）。
+      - ./cloud-sync/config.example.yaml:/config/cloud-sync.yaml:ro
     networks:
       - media
 
