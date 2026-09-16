@@ -1,0 +1,14 @@
+# Build cloud-sync from local source instead of pulling the published image.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# Useful for local development, for architectures without a published image
+# (only linux/amd64 is published), or when ghcr.io is unreachable. The build
+# tags the image as `cloud-sync:dev`.
+
+services:
+  cloud-sync:
+    build:
+      context: ./cloud-sync
+      dockerfile: Dockerfile
+    image: cloud-sync:dev

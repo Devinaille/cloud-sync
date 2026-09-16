@@ -13,7 +13,7 @@
 1. 如果 `/config/cloud-sync.yaml` **存在**——把里面出现的字段注入进程 env，再走原有 env 解析。文件里**没写**的字段继续走 env，env 也没设的报 required 错误。
 2. 如果 `/config/cloud-sync.yaml` **不存在**——退回纯 env 模式（向后兼容老的 docker-compose 部署）。
 
-字段名与 env 名一一对应（小写下划线 ↔ 大写下划线）。`docker-compose.yml` 默认把仓库里的 `config.example.yaml` 挂到 `/config/cloud-sync.yaml`，**复制并按需修改即可**：
+字段名与 env 名一一对应（小写下划线 ↔ 大写下划线）。`docker-compose.yml` 默认把仓库根的 `config.yaml` 挂到 `/config/cloud-sync.yaml`，**复制并按需修改即可**：
 
 ```bash
 cp config.example.yaml /your/deploy/path/cloud-sync/config.yaml
@@ -207,22 +207,25 @@ rm -rf "$WS"
 go build -o cloud-sync .
 
 # Docker (distroless/static, non-root, <30 MiB)
-docker build -t cloud-sync:1.0.0 .
+docker build -t cloud-sync:dev .
 ```
 
 ## Run（部署到 TrueNAS）
 
-`docker-compose.yml` 默认把 `config.example.yaml` 挂到容器的 `/config/cloud-sync.yaml`，**首次部署先复制一份到本地再编辑**：
+`docker-compose.yml` 默认**拉发布镜像**（`ghcr.io/devinaille/cloud-sync`，用 `CLOUD_SYNC_TAG` 选版本），并把仓库根的 `config.yaml` 挂到容器的 `/config/cloud-sync.yaml`。**首次部署先复制一份配置再编辑**：
 
 ```bash
-cp config.example.yaml cloud-sync/config.yaml
-vim cloud-sync/config.yaml
-# 改 openlist_token 等
-docker compose up -d cloud-sync
+cp config.example.yaml config.yaml
+vim config.yaml            # 改 openlist_token、watch_dirs 等
+
+CLOUD_SYNC_TAG=v0.1.0-rc2 docker compose up -d cloud-sync
 docker compose logs -f cloud-sync
+
+# 或从本地源码构建：
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
-也可以完全退回纯 env 模式：删掉 `/config/cloud-sync.yaml`（或注释 compose 里的挂载），env 走通。
+也可以完全退回纯 env 模式：删掉 `/config/cloud-sync.yaml`（或注释 compose 里的挂载），env 走通（注意 `TASKS_ENABLED`、`UI_LISTEN` 等也要在 env 里给）。
 
 ## Web UI
 

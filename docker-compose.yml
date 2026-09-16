@@ -1,5 +1,13 @@
 # cloud-sync · Docker Compose
 #
+# Runs the published image by default. Pick a version with CLOUD_SYNC_TAG
+# (git tag, e.g. v0.1.0); it defaults to "latest" (published by full
+# releases only). Until then, set it explicitly, e.g.:
+#   CLOUD_SYNC_TAG=v0.1.0-rc2 docker compose up -d
+#
+# To build from local source instead, add the build override:
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
 # Single service: cloud-sync. Sibling services (OpenList, qBittorrent,
 # Emby, MoviePilot, etc.) are managed in their own compose files —
 # cloud-sync only needs them on the same Docker network (`media`) so it can
@@ -7,10 +15,10 @@
 
 services:
   cloud-sync:
-    build:
-      context: ./cloud-sync
-      dockerfile: Dockerfile
-    image: cloud-sync:1.0.0
+    image: ghcr.io/devinaille/cloud-sync:${CLOUD_SYNC_TAG:-latest}
+    # Pull only when the image is not present locally; run `docker compose pull`
+    # to update.
+    pull_policy: missing
     container_name: cloud-sync
     restart: unless-stopped
     environment:

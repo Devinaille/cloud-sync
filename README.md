@@ -9,7 +9,8 @@ TrueNAS docker compose 下的自动化协调器：监听本地 `media/` + `ani-r
 - [`cloud-sync/`](./cloud-sync/) — Go 实现的 cloud-sync 容器（监听 / 上传 / 清理）
 - [`config.example.yaml`](./config.example.yaml) — 配置文件模板（复制为本地副本后修改）
 - [`scripts/`](./scripts/) — 仓库级开发/调试脚本（本地 smoke test、OpenList mock）
-- [`docker-compose.yml`](./docker-compose.yml) — 生产部署 compose（只含 cloud-sync 一个 service）
+- [`docker-compose.yml`](./docker-compose.yml) — 生产部署 compose（只含 cloud-sync；默认拉发布镜像，`CLOUD_SYNC_TAG` 选版本）
+- [`docker-compose.build.yml`](./docker-compose.build.yml) — 叠加此文件可从本地源码构建镜像
 
 ## 部署
 
@@ -46,9 +47,15 @@ mkdir -p /mnt/basic/media/media /mnt/basic/media/ani-rss /mnt/basic/media/.sync_
 
 #### 3. 启动
 
+默认拉取发布镜像 `ghcr.io/devinaille/cloud-sync`。用 `CLOUD_SYNC_TAG` 选版本（默认 `latest`，仅正式版发布；目前只有 rc，请显式指定）：
+
 ```bash
-docker compose up -d cloud-sync
+# 拉发布镜像并启动
+CLOUD_SYNC_TAG=v0.1.0-rc2 docker compose up -d cloud-sync
 docker compose logs -f cloud-sync
+
+# 或从本地源码构建（本地开发 / 无 amd64 发布镜像时）
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
 预期首条日志（`LOG_FILE` 默认空 → stdout，由 compose 收集）：
@@ -82,9 +89,17 @@ networks:
 
 #### 6. 升级
 
+发布镜像：
+
 ```bash
-docker compose build cloud-sync
-docker compose up -d cloud-sync
+CLOUD_SYNC_TAG=v0.2.0 docker compose pull cloud-sync
+CLOUD_SYNC_TAG=v0.2.0 docker compose up -d cloud-sync
+```
+
+本地构建：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
 配置文件不会被打进镜像（挂载的），升级不丢设置。
@@ -263,18 +278,17 @@ git tag v1.0.0     && git push origin v1.0.0       # 正式版
 
 ### 部署发布产物（本地测试）
 
-**方式 1：跑发布的镜像**（不本地构建）：
+**方式 1：跑发布的镜像**（compose 默认即此路径）：
 
 ```bash
-# 直接拉取
-docker pull ghcr.io/devinaille/cloud-sync:v0.1.0-rc1
-
-# 或复用 compose 的端口/挂载/环境，仅替换镜像（--no-build 跳过本地构建）
 cp config.example.yaml config.yaml   # 编辑成真实配置
-CLOUD_SYNC_TAG=v0.1.0-rc1 \
-  docker compose -f docker-compose.yml -f docker-compose.rc.yml up -d --no-build
+
+# base compose 直接用发布镜像，用 CLOUD_SYNC_TAG 选版本
+CLOUD_SYNC_TAG=v0.1.0-rc2 docker compose up -d cloud-sync
 docker compose logs -f cloud-sync
 ```
+
+从本地源码构建则叠加 build override：`docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build`。
 
 **方式 2：跑发布二进制**（无 Docker）：
 
