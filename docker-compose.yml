@@ -1,79 +1,38 @@
-# cloud-sync · Docker Compose
+# cloud-sync · Docker Compose — config-file mode (default / recommended)
 #
-# Runs the published image by default. Pick a version with CLOUD_SYNC_TAG
-# (git tag, e.g. v0.1.0); it defaults to "latest" (published by full
-# releases only). Until then, set it explicitly, e.g.:
+# All settings live in ./config/cloud-sync.yaml; the environment here is minimal.
+#
+#   mkdir -p config && cp config.example.yaml config/cloud-sync.yaml
 #   CLOUD_SYNC_TAG=v0.1.0-rc2 docker compose up -d
 #
-# To build from local source instead, add the build override:
+# Run user: set PUID/PGID (e.g. in a .env file or the shell) to the host user
+# that owns the media dirs; defaults to the image's nonroot (65532). The user
+# must be able to write the mounted media/config directories.
+#
+# Build from source instead of pulling:
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 #
-# Single service: cloud-sync. Sibling services (OpenList, qBittorrent,
-# Emby, MoviePilot, etc.) are managed in their own compose files —
-# cloud-sync only needs them on the same Docker network (`media`) so it can
-# resolve OpenList's HTTP endpoint via `http://openlist:5244`.
+# Other config sources: docker-compose.env.yml (.env), docker-compose.inline.yml
+# (environment written inline). Sibling services (OpenList, Emby, ...) live in
+# their own compose files and only need to share the `media` network.
 
 services:
   cloud-sync:
     image: ghcr.io/devinaille/cloud-sync:${CLOUD_SYNC_TAG:-latest}
-    # Pull only when the image is not present locally; run `docker compose pull`
-    # to update.
     pull_policy: missing
     container_name: cloud-sync
     restart: unless-stopped
+    user: "${PUID:-65532}:${PGID:-65532}"
     environment:
-      - TZ=Asia/Shanghai
-
-      # OpenList connection (resolved on the `media` Docker network)
-      - OPENLIST_URL=http://openlist:5244
-      - OPENLIST_TOKEN=replace-with-openlist-admin-token
-      - OPENLIST_SRC_STORAGE=/local_media       # storage ROOT; cloud-sync appends "media"
-      - OPENLIST_DST_STORAGE=/139yun_media      # storage ROOT; cloud-sync appends "media"
-      # false → skip_existing (keep cloud file if present); true → overwrite
-      - OPENLIST_OVERWRITE=false
-
-      # Web UI + JSON API (default :8099; empty or "-" disables). No auth —
-      # expose only on a trusted LAN. Change requires a restart (bind at startup).
-      - UI_LISTEN=:8099
-      # Tasks are off until enabled (Web UI → Dashboard → Start tasks, or set true)
-      - TASKS_ENABLED=false
-
-      # Watched local directories (comma-separated absolute paths; must exist)
-      - WATCH_DIRS=/mnt/basic/media/media,/mnt/basic/media/ani-rss
-
-      # Sync state directory (must exist on host)
-      - SYNC_STATUS_DIR=/mnt/basic/media/.sync_status
-
-      # Cleanup whitelist (must include every WATCH_DIRS entry)
-      - ALLOWED_SOURCE_PREFIXES=/mnt/basic/media/media,/mnt/basic/media/ani-rss
-
-      # Cleanup policy
-      - CLEANUP_AFTER_HOURS=72
-      - CLEANUP_DRY_RUN=false                   # first deploy: leave true for 24h, then flip
-
-      # Upload pipeline
-      - UPLOAD_CONCURRENCY=2
-      - STABILIZE_WAIT_SECONDS=30
-      - POLL_INTERVAL_SECONDS=3
-      - TASK_TIMEOUT_SECONDS=1800
-
-      # Logging
-      - LOG_LEVEL=INFO
-      - LOG_FILE=                                # empty = stdout, captured by `docker compose logs`
+      - TZ=${TZ:-Asia/Shanghai}
     ports:
-      # Web UI + JSON API. No auth — expose only on a trusted LAN (or bind to
-      # 127.0.0.1 and reach it via an SSH tunnel / reverse proxy).
-      - "8099:8099"
+      - "8099:8099"     # Web UI + JSON API (no auth; LAN only)
     volumes:
-      # ZFS dataset: cloud-sync writes .sync_status here and removes videos after
-      # 72h. The app-level ALLOWED_SOURCE_PREFIXES whitelist is the actual safety
-      # boundary for the cleanup pass.
+      # Media dataset: cloud-sync watches it, writes .sync_status, removes
+      # videos after 72h. ALLOWED_SOURCE_PREFIXES (in the config) is the safety
+      # boundary for cleanup.
       - /mnt/basic/media:/mnt/basic/media:rw
-      # Working config directory. Create it first:
-      #   mkdir -p config && cp config.example.yaml config/cloud-sync.yaml
-      # Mount a directory (not the file): bind-mounting a file that does not
-      # exist yet makes Docker create a *directory* of that name. Mounted :rw so
-      # "Save & Reload" in the Web UI can rewrite config/cloud-sync.yaml.
+      # Working config directory; holds cloud-sync.yaml (editable via the UI).
       - ./config:/config:rw
     networks:
       - media

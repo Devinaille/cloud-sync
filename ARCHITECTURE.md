@@ -14,7 +14,7 @@
 - **139strm 独立 cron 扫描云盘**，不接收任何推送通知
 - ani-rss 路径**不经过 MP**，由 cloud-sync 统一处理上传
 - 迁移策略：**增量迁移**，只管新下载，存量保持原状
-- 同步状态标记写入 `/mnt/basic/media/.sync_status/`（在数据集内）
+- 同步状态标记写入 `/config/.sync_status/`（在挂载的 `/config` 目录内）
 - 本地源文件保留 **72 小时**过渡期后由 cloud-sync 清理
 - **所有云盘操作一律走 OpenList API**（读/写/列/删/查），禁止 rclone / sftp / scp / 直连云盘 API 等旁路；判断成功的唯一标准是 OpenList API 返回值
 
@@ -62,7 +62,7 @@
 | `/mnt/basic/media/ani-rss/` | TrueNAS 数据集 | ani-rss 下载输出 |
 | `/mnt/basic/media/media/` | TrueNAS 数据集 | MP 资源转移 + 刮削后输出 |
 | `/mnt/basic/media/strm_media/` | TrueNAS 数据集 | 139strm 输出，Emby 库根 |
-| `/mnt/basic/media/.sync_status/` | TrueNAS 数据集 | cloud-sync 同步状态标记 |
+| `/config/.sync_status/` | `/config` 挂载目录 | cloud-sync 同步状态标记 |
 | `/d/139yun/media/` | 移动云盘 | 最终存储 |
 
 ---
@@ -440,7 +440,7 @@ inotify 监听:
 
 ### 8.5 同步状态记录
 
-`/mnt/basic/media/.sync_status/<YYYY-MM-DD>/<rel_path>.json`：
+`/config/.sync_status/<YYYY-MM-DD>/<rel_path>.json`：
 
 ```json
 {

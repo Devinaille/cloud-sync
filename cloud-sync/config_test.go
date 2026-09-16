@@ -526,3 +526,33 @@ func TestLoad_FileTasksEnabled_OverridesEnv(t *testing.T) {
 		t.Error("TasksEnabled = false, want true (file overrides env)")
 	}
 }
+
+func TestLoad_SyncStatusDir_DefaultsUnderConfig(t *testing.T) {
+	setFullEnv(t)
+	prev, ok := os.LookupEnv("SYNC_STATUS_DIR")
+	os.Unsetenv("SYNC_STATUS_DIR")
+	t.Cleanup(func() {
+		if ok {
+			os.Setenv("SYNC_STATUS_DIR", prev)
+		} else {
+			os.Unsetenv("SYNC_STATUS_DIR")
+		}
+	})
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.SyncStatusDir != "/config/.sync_status" {
+		t.Errorf("SyncStatusDir = %q, want /config/.sync_status", cfg.SyncStatusDir)
+	}
+}
+
+func TestLoad_MissingWatchDirStillRejected(t *testing.T) {
+	setFullEnv(t)
+	missing := filepath.Join(t.TempDir(), "nope")
+	t.Setenv("WATCH_DIRS", missing)
+	if _, err := Load(""); err == nil {
+		t.Fatal("Load() expected error for a nonexistent WATCH_DIRS entry")
+	}
+}

@@ -164,7 +164,6 @@ func loadFromEnv() (*Config, error) {
 		{"OPENLIST_TOKEN", &cfg.OpenListToken, true},
 		{"OPENLIST_SRC_STORAGE", &cfg.SrcStorage, true},
 		{"OPENLIST_DST_STORAGE", &cfg.DstStorage, true},
-		{"SYNC_STATUS_DIR", &cfg.SyncStatusDir, true},
 		{"LOG_LEVEL", &cfg.LogLevel, true},
 	}
 	for _, s := range strs {
@@ -175,6 +174,13 @@ func loadFromEnv() (*Config, error) {
 		*s.dst = v
 	}
 	cfg.LogFile = os.Getenv("LOG_FILE") // optional
+
+	// Sync status defaults under the config directory (mounted /config) so it
+	// persists with the config; override with SYNC_STATUS_DIR / sync_status_dir.
+	cfg.SyncStatusDir = os.Getenv("SYNC_STATUS_DIR")
+	if cfg.SyncStatusDir == "" {
+		cfg.SyncStatusDir = "/config/.sync_status"
+	}
 	if v, ok := os.LookupEnv("UI_LISTEN"); ok {
 		cfg.UIListen = v
 	} else {
@@ -245,9 +251,9 @@ func loadFromEnv() (*Config, error) {
 		return nil, err
 	}
 
-	// OS-level path existence check
-	paths := append([]string{cfg.SyncStatusDir}, cfg.WatchDirs...)
-	for _, p := range paths {
+	// Watch dirs must exist (fsnotify needs them). The sync status dir is
+	// created on demand by StateManager.EnsureDirs, so it is not stat-checked.
+	for _, p := range cfg.WatchDirs {
 		if _, err := os.Stat(p); err != nil {
 			return nil, fmt.Errorf("config: path %q not accessible: %w", p, err)
 		}

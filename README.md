@@ -9,7 +9,8 @@ TrueNAS docker compose 下的自动化协调器：监听本地 `media/` + `ani-r
 - [`cloud-sync/`](./cloud-sync/) — Go 实现的 cloud-sync 容器（监听 / 上传 / 清理）
 - [`config.example.yaml`](./config.example.yaml) — 配置文件模板（复制为本地副本后修改）
 - [`scripts/`](./scripts/) — 仓库级开发/调试脚本（本地 smoke test、OpenList mock）
-- [`docker-compose.yml`](./docker-compose.yml) — 生产部署 compose（只含 cloud-sync；默认拉发布镜像，`CLOUD_SYNC_TAG` 选版本）
+- [`docker-compose.yml`](./docker-compose.yml) — 部署 compose（配置文件模式，默认）
+- [`docker-compose.env.yml`](./docker-compose.env.yml) / [`docker-compose.inline.yml`](./docker-compose.inline.yml) — 分别用 `.env` / 内联环境变量的 compose
 - [`docker-compose.build.yml`](./docker-compose.build.yml) — 叠加此文件可从本地源码构建镜像
 
 ## 部署
@@ -19,6 +20,18 @@ cloud-sync 有两种部署方式。两种都支持配置文件模式（推荐）
 ### 方式 A：Docker Compose（推荐）
 
 适合已经有 Docker / TrueNAS 的环境；提供容器隔离、自动重启、统一日志（`docker compose logs`）。
+
+提供三份 compose，按配置来源选一份（都共享同样的端口/挂载/网络）：
+
+| 文件 | 配置来源 | 用途 |
+|---|---|---|
+| `docker-compose.yml` | **配置文件** `config/cloud-sync.yaml`（默认，推荐） | 集中管理、可在 Web UI 里改并热重载 |
+| `docker-compose.env.yml` | `.env`（`env_file`） | 用 `.env` 注入环境变量 |
+| `docker-compose.inline.yml` | compose 内直接写 `environment:` | 单文件自包含（密钥落在文件里） |
+
+任意一份都可叠加 `docker-compose.build.yml` 从本地源码构建镜像（`-f <base> -f docker-compose.build.yml up -d --build`）。
+
+**运行用户（PUID/PGID）**：镜像默认 `nonroot`（UID 65532）。三份 compose 都用 `user: "${PUID:-65532}:${PGID:-65532}"` 按环境变量切换运行用户；把 `PUID`/`PGID` 设为宿主上拥有 `media`/`config` 目录的用户（可在 `.env` 或 shell 里设置）。该用户必须能写这些挂载目录。
 
 #### 1. 准备配置
 
@@ -32,7 +45,7 @@ $EDITOR config/cloud-sync.yaml
 # 必改项：
 #   openlist_token        (OpenList 后台获取)
 #   watch_dirs            (默认 /mnt/basic/media/media + /mnt/basic/media/ani-rss)
-#   sync_status_dir       (默认 /mnt/basic/media/.sync_status)
+#   sync_status_dir       (默认 /config/.sync_status)
 #   allowed_source_prefixes (必须包含两个 WATCH_*_DIR)
 ```
 
@@ -41,7 +54,7 @@ $EDITOR config/cloud-sync.yaml
 #### 2. 创建 host 端目录
 
 ```bash
-mkdir -p /mnt/basic/media/media /mnt/basic/media/ani-rss /mnt/basic/media/.sync_status
+mkdir -p /mnt/basic/media/media /mnt/basic/media/ani-rss
 ```
 
 `media/` 和 `ani-rss/` 至少要存在（cloud-sync 用 fsnotify 监听）。`strm_media/` 是 139strm + Emby 的事，不需要 cloud-sync 创建。
@@ -71,7 +84,7 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 丢一个视频到 `/mnt/basic/media/media/Movies/Test.mkv`（>100 MB，MinFileSize 是硬编码的），几秒后应该看到：
 
 ```bash
-docker compose exec cloud-sync ls /mnt/basic/media/.sync_status/2026-09-15/Movies/
+docker compose exec cloud-sync ls /config/.sync_status/2026-09-15/Movies/
 # Test.mkv.json
 ```
 
@@ -165,7 +178,7 @@ Group=cloud-sync
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/mnt/basic/media/.sync_status /mnt/basic/media/media /mnt/basic/media/ani-rss
+ReadWritePaths=/config/.sync_status /mnt/basic/media/media /mnt/basic/media/ani-rss
 PrivateTmp=true
 LimitNOFILE=65536
 # inotify 需要 fsnotify 看到目录

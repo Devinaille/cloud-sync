@@ -40,8 +40,9 @@ watch_dirs:
   - /mnt/basic/media/media
   - /mnt/basic/media/ani-rss
 
-# Where cloud-sync writes its .sync_status/<date>/... state.
-sync_status_dir:      /mnt/basic/media/.sync_status
+# Where cloud-sync writes its .sync_status/<date>/... state. Defaults to
+# /config/.sync_status (the mounted config dir) when unset; created on demand.
+sync_status_dir:      /config/.sync_status
 
 # Absolute path prefixes cleanup will accept deletions under. Every entry
 # in watch_dirs above must be listed here, but the list may be broader

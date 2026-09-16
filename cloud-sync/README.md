@@ -277,7 +277,7 @@ YAML 与 env 同名（小写 ↔ 大写）。下表是底层 env 名：
 | `UI_LISTEN` / `ui_listen` (默认 `:8099`) | Web UI + JSON API 监听地址；显式空字符串或 `-` 禁用 UI |
 | `TASKS_ENABLED` / `tasks_enabled` (默认 **false**) | 任务开关：false 时不监听/不上传/不清理；可在 Web UI 运行时启停 |
 | `WATCH_DIRS` | 逗号分隔的**绝对**本地路径列表（fsnotify 递归监听每个） |
-| `SYNC_STATUS_DIR` | `.sync_status/` 绝对路径 |
+| `SYNC_STATUS_DIR` (默认 `/config/.sync_status`) | `.sync_status/` 绝对路径；缺省时放挂载的 `/config` 下，启动时自动创建 |
 | `ALLOWED_SOURCE_PREFIXES` | 逗号分隔，cleanup 防御性白名单（必须包含每个 WATCH_DIR） |
 | `CLEANUP_AFTER_HOURS` | 清理延迟（小时） |
 | `CLEANUP_DRY_RUN` | true=只打日志不删，false=真删（代码默认 false） |
@@ -302,7 +302,7 @@ YAML 与 env 同名（小写 ↔ 大写）。下表是底层 env 名：
 - **失败记录**：`.sync_status/FAILED/<date>/<rel>.json` 的 `error` 字段有原因。重启会自动重试（失败记录也阻塞 AlreadySynced——人工删除该文件可强制重试）。
 - **强制重处理**：
   ```bash
-  rm /mnt/basic/media/.sync_status/<date>/<rel>.json
+  rm /config/.sync_status/<date>/<rel>.json
   # 重启 cloud-sync 即可（StartupScan 会重新跑 process）
   ```
 

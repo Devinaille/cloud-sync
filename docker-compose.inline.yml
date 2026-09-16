@@ -1,0 +1,71 @@
+# cloud-sync · Docker Compose — inline environment mode
+#
+# Every setting is written directly here (self-contained; secrets end up in
+# this file). Do NOT also create config/cloud-sync.yaml — the config file takes
+# precedence over env.
+#
+#   CLOUD_SYNC_TAG=v0.1.0-rc2 docker compose -f docker-compose.inline.yml up -d
+#
+# PUID/PGID select the runtime user (defaults to the image's nonroot, 65532).
+# ./config is still mounted so the Web UI can save a config file, which then
+# takes over from env on the next reload/restart.
+#
+# Build from source: add docker-compose.build.yml
+#   docker compose -f docker-compose.inline.yml -f docker-compose.build.yml up -d --build
+
+services:
+  cloud-sync:
+    image: ghcr.io/devinaille/cloud-sync:${CLOUD_SYNC_TAG:-latest}
+    pull_policy: missing
+    container_name: cloud-sync
+    restart: unless-stopped
+    user: "${PUID:-65532}:${PGID:-65532}"
+    environment:
+      - TZ=Asia/Shanghai
+
+      # OpenList connection (resolved on the `media` Docker network)
+      - OPENLIST_URL=http://openlist:5244
+      - OPENLIST_TOKEN=replace-with-openlist-admin-token
+      - OPENLIST_SRC_STORAGE=/local_media       # storage ROOT; cloud-sync appends "media"
+      - OPENLIST_DST_STORAGE=/139yun_media      # storage ROOT; cloud-sync appends "media"
+      - OPENLIST_OVERWRITE=false                # false → skip_existing; true → overwrite
+
+      # Web UI + JSON API (default :8099; empty or "-" disables). No auth.
+      - UI_LISTEN=:8099
+      # Tasks are off until enabled (Web UI → Dashboard → Start tasks, or true)
+      - TASKS_ENABLED=false
+
+      # Watched local directories (comma-separated; must exist)
+      - WATCH_DIRS=/mnt/basic/media/media,/mnt/basic/media/ani-rss
+
+      # Sync state directory (defaults to /config/.sync_status; created on demand)
+      - SYNC_STATUS_DIR=/config/.sync_status
+
+      # Cleanup whitelist (must include every WATCH_DIRS entry)
+      - ALLOWED_SOURCE_PREFIXES=/mnt/basic/media/media,/mnt/basic/media/ani-rss
+
+      # Cleanup policy
+      - CLEANUP_AFTER_HOURS=72
+      - CLEANUP_DRY_RUN=false                   # first deploy: leave true for 24h, then flip
+
+      # Upload pipeline
+      - UPLOAD_CONCURRENCY=2
+      - STABILIZE_WAIT_SECONDS=30
+      - POLL_INTERVAL_SECONDS=3
+      - TASK_TIMEOUT_SECONDS=1800
+
+      # Logging
+      - LOG_LEVEL=INFO
+      - LOG_FILE=                                # empty = stdout
+    ports:
+      - "8099:8099"
+    volumes:
+      - /mnt/basic/media:/mnt/basic/media:rw
+      - ./config:/config:rw
+    networks:
+      - media
+
+networks:
+  media:
+    driver: bridge
+    name: media
