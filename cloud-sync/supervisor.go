@@ -368,17 +368,27 @@ func (s *Supervisor) GenerationErr() error {
 	return g.ctx.Err()
 }
 
-// Ping checks the current generation's uploader if it implements an optional
-// Ping(ctx) error method. It returns nil when the uploader has no Ping, and an
-// error when no generation is running.
+// Ping checks OpenList connectivity if the uploader implements an optional
+// Ping(ctx) error method, returning nil when it does not. While paused (no
+// generation) it builds a throwaway uploader from the current config so the
+// status probe still reflects connectivity.
 func (s *Supervisor) Ping(ctx context.Context) error {
 	s.mu.RLock()
 	g := s.gen
+	cfg := s.cfg
+	log := s.log
 	s.mu.RUnlock()
-	if g == nil {
-		return errors.New("supervisor: no active generation")
+
+	var up Uploader
+	if g != nil {
+		up = g.uploader
+	} else if cfg != nil {
+		up = s.deps.NewUploader(cfg, log)
 	}
-	if p, ok := g.uploader.(interface{ Ping(context.Context) error }); ok {
+	if up == nil {
+		return errors.New("supervisor: not initialized")
+	}
+	if p, ok := up.(interface{ Ping(context.Context) error }); ok {
 		return p.Ping(ctx)
 	}
 	return nil
