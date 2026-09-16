@@ -47,6 +47,23 @@
       "maint.run": "Run cleanup now",
       "maint.done": "Cleanup processed {n} item(s).",
       "maint.failed": "Cleanup failed: {e}",
+      "tasks.title": "Tasks",
+      "tasks.running": "Running",
+      "tasks.paused": "Paused",
+      "tasks.unknown": "Unknown",
+      "tasks.start": "Start tasks",
+      "tasks.pause": "Pause tasks",
+      "tasks.note": "Tasks are off by default; starting them begins watching/uploading and cleanup.",
+      "tasks.started": "Tasks started.",
+      "tasks.pausedToast": "Tasks paused.",
+      "tasks.failed": "Task switch failed: {e}",
+      "precheck.title": "Upload pre-check",
+      "precheck.run": "Run pre-check",
+      "precheck.running": "Scanning\u2026",
+      "precheck.none": "No pre-check yet.",
+      "precheck.summary": "{n} file(s) to upload, {size} total.",
+      "precheck.clean": "Nothing to upload.",
+      "precheck.failed": "Pre-check failed: {e}",
       "files.search": "Search path\u2026",
       "files.retrySelected": "Retry selected",
       "files.retry": "Retry",
@@ -128,6 +145,23 @@
       "maint.run": "立即清理",
       "maint.done": "清理处理了 {n} 项。",
       "maint.failed": "清理失败：{e}",
+      "tasks.title": "任务",
+      "tasks.running": "运行中",
+      "tasks.paused": "已暂停",
+      "tasks.unknown": "未知",
+      "tasks.start": "启动任务",
+      "tasks.pause": "暂停任务",
+      "tasks.note": "任务默认关闭；启动后才开始监听/上传与清理。",
+      "tasks.started": "任务已启动。",
+      "tasks.pausedToast": "任务已暂停。",
+      "tasks.failed": "切换任务失败：{e}",
+      "precheck.title": "上传预检查",
+      "precheck.run": "运行预检查",
+      "precheck.running": "扫描中\u2026",
+      "precheck.none": "尚未预检查。",
+      "precheck.summary": "待上传 {n} 个文件，共 {size}。",
+      "precheck.clean": "没有需要上传的文件。",
+      "precheck.failed": "预检查失败：{e}",
       "files.search": "搜索路径\u2026",
       "files.retrySelected": "重试选中",
       "files.retry": "重试",
@@ -236,6 +270,7 @@
 
   var selected = new Set();
   var connState = null;
+  var tasksRunning = false;
   var statusTimer = null;
   var searchTimer = null;
   var currentTab = "dashboard";
@@ -461,7 +496,32 @@
       }
     }
 
+    tasksRunning = !!st.tasks_running;
+    renderTasks(st);
+    updateControls();
+
     renderEffectiveConfig(cfg);
+  }
+
+  function renderTasks(st) {
+    var badge = byId("tasks-badge");
+    var btn = byId("tasks-toggle");
+    var running = !!(st && st.tasks_running);
+    if (badge) {
+      badge.textContent = running ? t("tasks.running") : t("tasks.paused");
+      badge.className = "badge " + (running ? "ok" : "down");
+    }
+    if (btn) {
+      btn.textContent = running ? t("tasks.pause") : t("tasks.start");
+    }
+  }
+
+  function updateControls() {
+    var cleanupBtn = byId("cleanup-btn");
+    if (cleanupBtn) {
+      cleanupBtn.disabled = !tasksRunning;
+    }
+    updateRetrySelected();
   }
 
   var CONFIG_LABELS = {
@@ -551,6 +611,92 @@
     }
   }
 
+  async function toggleTasks() {
+    var btn = byId("tasks-toggle");
+    if (btn) {
+      btn.disabled = true;
+    }
+    try {
+      var data = await postJSON("/api/tasks", { enabled: !tasksRunning });
+      toast(data && data.tasks_running ? t("tasks.started") : t("tasks.pausedToast"), "success");
+      if (data) {
+        renderStatus(data);
+      }
+      await loadStatus();
+      await loadFiles();
+    } catch (e) {
+      toast(t("tasks.failed", { e: e.message }), "error");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+      }
+    }
+  }
+
+  // ---- upload pre-check (read-only) -----------------------------------
+
+  function renderPrecheck(rep) {
+    var sum = byId("precheck-summary");
+    var list = byId("precheck-list");
+    if (list) {
+      list.textContent = "";
+    }
+    if (!rep) {
+      if (sum) {
+        sum.textContent = t("precheck.none");
+      }
+      return;
+    }
+    var n = rep.candidates_total || 0;
+    if (sum) {
+      sum.textContent = n
+        ? t("precheck.summary", { n: n, size: formatBytes(rep.candidates_bytes || 0) })
+        : t("precheck.clean");
+    }
+    if (list) {
+      (rep.candidates || []).slice(0, 10).forEach(function (c) {
+        list.appendChild(el("li", "dir", c.key + "  (" + formatBytes(c.size) + ")"));
+      });
+    }
+  }
+
+  async function loadPrecheck() {
+    try {
+      renderPrecheck(await api("/api/precheck"));
+    } catch (e) {
+      renderPrecheck(null);
+    }
+  }
+
+  async function runPrecheck() {
+    var btn = byId("precheck-btn");
+    if (btn) {
+      btn.disabled = true;
+    }
+    var sum = byId("precheck-summary");
+    if (sum) {
+      sum.textContent = t("precheck.running");
+    }
+    try {
+      var rep = await postJSON("/api/precheck", {});
+      renderPrecheck(rep);
+      toast(
+        t("precheck.summary", {
+          n: rep.candidates_total || 0,
+          size: formatBytes(rep.candidates_bytes || 0),
+        }),
+        "success"
+      );
+    } catch (e) {
+      toast(t("precheck.failed", { e: e.message }), "error");
+      await loadPrecheck();
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+      }
+    }
+  }
+
   // ---- files -----------------------------------------------------------
 
   function stateLabel(state) {
@@ -618,6 +764,7 @@
     var actionCell = el("td", "col-action");
     var retry = el("button", "btn small", t("files.retry"));
     retry.type = "button";
+    retry.disabled = !tasksRunning;
     retry.addEventListener("click", function () {
       retryKeys([item.key]);
     });
@@ -683,7 +830,7 @@
   function updateRetrySelected() {
     var btn = byId("retry-selected");
     if (btn) {
-      btn.disabled = selected.size === 0;
+      btn.disabled = !tasksRunning || selected.size === 0;
     }
   }
 
@@ -852,6 +999,7 @@
     });
     if (name === "dashboard") {
       loadStatus();
+      loadPrecheck();
     } else if (name === "files") {
       loadFiles();
     } else if (name === "config") {
@@ -878,6 +1026,7 @@
     if (lastStatus) {
       renderStatus(lastStatus);
     }
+    renderTasks(lastStatus);
     renderFiles();
     renderEffectiveConfig(lastConfig);
     renderConn();
@@ -977,6 +1126,16 @@
     var cleanupBtn = byId("cleanup-btn");
     if (cleanupBtn) {
       cleanupBtn.addEventListener("click", runCleanup);
+    }
+
+    var tasksBtn = byId("tasks-toggle");
+    if (tasksBtn) {
+      tasksBtn.addEventListener("click", toggleTasks);
+    }
+
+    var precheckBtn = byId("precheck-btn");
+    if (precheckBtn) {
+      precheckBtn.addEventListener("click", runPrecheck);
     }
 
     var saveBtn = byId("config-save");

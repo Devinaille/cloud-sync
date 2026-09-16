@@ -38,6 +38,8 @@ func (w *WebServer) Handler() http.Handler {
 	mux.HandleFunc("/api/config", w.handleConfig)
 	mux.HandleFunc("/api/retry", w.handleRetry)
 	mux.HandleFunc("/api/cleanup/run", w.handleCleanupRun)
+	mux.HandleFunc("/api/tasks", w.handleTasks)
+	mux.HandleFunc("/api/precheck", w.handlePrecheck)
 
 	sub, err := fs.Sub(webFS, "web")
 	if err != nil {

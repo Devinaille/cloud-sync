@@ -45,6 +45,13 @@ type Supervisor struct {
 	lastErr string
 	started time.Time
 
+	// enabled is the desired task state (watcher/pipeline/cleanup). It starts
+	// from cfg.TasksEnabled and is flipped at runtime by Pause/Resume. State is
+	// kept even when paused so the Web UI can browse and precheck.
+	enabled bool
+	// state is created even while paused and rebuilt when SyncStatusDir changes.
+	state *StateManager
+
 	// baseCtx is the long-lived application context captured on the first
 	// Start. Generations derive from it (not from per-call contexts) so a
 	// Reload triggered by an HTTP handler cannot cancel the new generation when
@@ -63,7 +70,7 @@ func NewSupervisor(cfgPath string, cfg *Config, log *slog.Logger, deps Superviso
 			return NewClient(cfg.OpenListURL, cfg.OpenListToken, log)
 		}
 	}
-	return &Supervisor{cfgPath: cfgPath, cfg: cfg, log: log, deps: deps}
+	return &Supervisor{cfgPath: cfgPath, cfg: cfg, log: log, deps: deps, enabled: cfg.TasksEnabled}
 }
 
 // Start builds and launches a generation from the current config. It returns
@@ -83,7 +90,25 @@ func (s *Supervisor) Start(ctx context.Context) error {
 	s.mu.RLock()
 	cfg := s.cfg
 	log := s.log
+	enabled := s.enabled
 	s.mu.RUnlock()
+
+	// The state manager is created regardless of the task switch so the Web UI
+	// can browse files and run a precheck while tasks are paused.
+	st := NewStateManager(cfg.SyncStatusDir, log)
+	if err := st.EnsureDirs(); err != nil {
+		s.setLastErr(err)
+		return err
+	}
+
+	if !enabled {
+		s.mu.Lock()
+		s.state = st
+		s.lastErr = ""
+		s.mu.Unlock()
+		log.Info("tasks disabled; watcher/pipeline/cleanup not started (enable from the Web UI or TASKS_ENABLED)")
+		return nil
+	}
 
 	// Build the uploader and ping outside the write lock: Ping can block on the
 	// network (30s client timeout) and must not stall Snapshot/Reload.
@@ -92,12 +117,6 @@ func (s *Supervisor) Start(ctx context.Context) error {
 		if err := p.Ping(ctx); err != nil {
 			log.Warn("openlist ping failed; starting anyway", "err", err)
 		}
-	}
-
-	st := NewStateManager(cfg.SyncStatusDir, log)
-	if err := st.EnsureDirs(); err != nil {
-		s.setLastErr(err)
-		return err
 	}
 	w, err := NewWatcher(cfg.WatchDirs, cfg.MinFileSize, log)
 	if err != nil {
@@ -153,6 +172,7 @@ func (s *Supervisor) Start(ctx context.Context) error {
 		}
 	}()
 	s.gen = g
+	s.state = st
 	if s.started.IsZero() {
 		s.started = time.Now()
 	}
@@ -220,8 +240,17 @@ func (s *Supervisor) Reload(ctx context.Context) error {
 	s.log = log
 	g := s.gen
 	s.gen = nil
+	prevSyncDir := ""
+	if s.cfg != nil {
+		prevSyncDir = s.cfg.SyncStatusDir
+	}
 	s.cfg = newCfg
 	base := s.baseCtx
+	enabled := s.enabled
+	if prevSyncDir != newCfg.SyncStatusDir {
+		// State root moved: drop the cached manager so it is rebuilt.
+		s.state = nil
+	}
 	s.mu.Unlock()
 
 	if g != nil {
@@ -232,18 +261,73 @@ func (s *Supervisor) Reload(ctx context.Context) error {
 		// Reload before any Start: fall back to the caller's context.
 		base = ctx
 	}
-	return s.Start(base)
+
+	if enabled {
+		return s.Start(base)
+	}
+
+	// Paused: rebuild just the state manager so browsing/precheck keep working.
+	st := NewStateManager(newCfg.SyncStatusDir, log)
+	if err := st.EnsureDirs(); err != nil {
+		s.setLastErr(err)
+		return err
+	}
+	s.mu.Lock()
+	s.state = st
+	s.lastErr = ""
+	s.mu.Unlock()
+	return nil
 }
 
-// Snapshot returns the current generation's config, state manager, and
-// pipeline. ok is false when no generation is running.
+// Snapshot returns the current config and state manager, plus the running
+// pipeline when tasks are active. ok is false only when no state has been
+// initialized yet (e.g. a failed initial Start). It is true while paused, so
+// the Web UI can browse files and precheck with tasks stopped.
 func (s *Supervisor) Snapshot() (cfg *Config, st *StateManager, pl *Pipeline, ok bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.gen == nil {
+	if s.cfg == nil || s.state == nil {
 		return nil, nil, nil, false
 	}
-	return s.gen.cfg, s.gen.state, s.gen.pipeline, true
+	var p *Pipeline
+	if s.gen != nil {
+		p = s.gen.pipeline
+	}
+	return s.cfg, s.state, p, true
+}
+
+// TasksEnabled reports the desired task state.
+func (s *Supervisor) TasksEnabled() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.enabled
+}
+
+// TasksRunning reports whether the watcher/pipeline/cleanup generation is
+// currently running.
+func (s *Supervisor) TasksRunning() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.gen != nil
+}
+
+// Pause stops the running tasks (watcher/pipeline/cleanup) while keeping the
+// Web UI and state manager available. In-flight uploads finish or are safely
+// interrupted (ctx cancel writes no failed record). It is idempotent.
+func (s *Supervisor) Pause() {
+	s.mu.Lock()
+	s.enabled = false
+	s.mu.Unlock()
+	s.Stop()
+}
+
+// Resume starts tasks from the current config. It re-runs StartupScan, so any
+// file missed while paused is picked up.
+func (s *Supervisor) Resume(ctx context.Context) error {
+	s.mu.Lock()
+	s.enabled = true
+	s.mu.Unlock()
+	return s.Start(ctx)
 }
 
 // ConfigPath returns the path the Supervisor reloads config from.

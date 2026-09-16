@@ -27,6 +27,8 @@ services:
       # Web UI + JSON API (default :8099; empty or "-" disables). No auth —
       # expose only on a trusted LAN. Change requires a restart (bind at startup).
       - UI_LISTEN=:8099
+      # Tasks are off until enabled (Web UI → Dashboard → Start tasks, or set true)
+      - TASKS_ENABLED=false
 
       # Watched local directories (comma-separated absolute paths; must exist)
       - WATCH_DIRS=/mnt/basic/media/media,/mnt/basic/media/ani-rss

@@ -467,3 +467,62 @@ func TestLoad_ExampleConfigParses(t *testing.T) {
 		t.Error("example config should document watch_dirs")
 	}
 }
+
+func TestLoad_TasksEnabled_DefaultFalse(t *testing.T) {
+	setFullEnv(t)
+	prev, ok := os.LookupEnv("TASKS_ENABLED")
+	os.Unsetenv("TASKS_ENABLED")
+	t.Cleanup(func() {
+		if ok {
+			os.Setenv("TASKS_ENABLED", prev)
+		} else {
+			os.Unsetenv("TASKS_ENABLED")
+		}
+	})
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.TasksEnabled {
+		t.Error("TasksEnabled = true, want false by default")
+	}
+}
+
+func TestLoad_TasksEnabled_EnvTrue(t *testing.T) {
+	setFullEnv(t)
+	t.Setenv("TASKS_ENABLED", "true")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if !cfg.TasksEnabled {
+		t.Error("TasksEnabled = false, want true")
+	}
+}
+
+func TestLoad_TasksEnabled_EnvInvalid(t *testing.T) {
+	setFullEnv(t)
+	t.Setenv("TASKS_ENABLED", "yes")
+	if _, err := Load(""); err == nil {
+		t.Fatal("Load() expected error for TASKS_ENABLED=yes")
+	}
+}
+
+func TestLoad_FileTasksEnabled_OverridesEnv(t *testing.T) {
+	setFullEnv(t)
+	t.Setenv("TASKS_ENABLED", "false")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cloud-sync.yaml")
+	if err := os.WriteFile(path, []byte("openlist_url: http://x\ntasks_enabled: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if !cfg.TasksEnabled {
+		t.Error("TasksEnabled = false, want true (file overrides env)")
+	}
+}

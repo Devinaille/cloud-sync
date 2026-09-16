@@ -232,6 +232,8 @@ docker compose logs -f cloud-sync
 
 支持中英文切换（右上角 `EN / 中文`），默认跟随浏览器语言，选择存于 `localStorage`。
 
+**任务开关（默认关闭）**：`tasks_enabled` 默认 `false`——启动后不监听/不上传/不清理，只提供 UI。在 Dashboard 点「启动任务 / Start tasks」即为运行时开启（`POST /api/tasks`）；暂停会停止监听并安全收尾在途上传，状态目录保留，可随时浏览。**上传预检查**（Dashboard → Run pre-check，`POST /api/precheck`）是只读扫描：列出"若启动任务会上传哪些文件"并写入 `<sync_status_dir>/precheck.json`，暂停时也可用。暂停期间 `retry` / `cleanup/run` 返回 `409`（会改变文件状态的操作被拒绝）。
+
 JSON API：
 
 | Method + Path | 用途 |
@@ -266,6 +268,7 @@ YAML 与 env 同名（小写 ↔ 大写）。下表是底层 env 名：
 | `OPENLIST_DST_STORAGE` | OpenList 139yun 存储**根**（`/139yun_media`；同上追加 `media/`） |
 | `OPENLIST_OVERWRITE` (默认 false) | false=目标已存在时 `skip_existing`（保留云端文件）；true=`overwrite`（覆盖） |
 | `UI_LISTEN` / `ui_listen` (默认 `:8099`) | Web UI + JSON API 监听地址；显式空字符串或 `-` 禁用 UI |
+| `TASKS_ENABLED` / `tasks_enabled` (默认 **false**) | 任务开关：false 时不监听/不上传/不清理；可在 Web UI 运行时启停 |
 | `WATCH_DIRS` | 逗号分隔的**绝对**本地路径列表（fsnotify 递归监听每个） |
 | `SYNC_STATUS_DIR` | `.sync_status/` 绝对路径 |
 | `ALLOWED_SOURCE_PREFIXES` | 逗号分隔，cleanup 防御性白名单（必须包含每个 WATCH_DIR） |

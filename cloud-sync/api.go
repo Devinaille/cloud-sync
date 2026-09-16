@@ -28,6 +28,8 @@ type statusResponse struct {
 	StartedAt     string       `json:"started_at,omitempty"`
 	UptimeSeconds int64        `json:"uptime_seconds"`
 	OpenListPing  bool         `json:"openlist_ping"`
+	TasksEnabled  bool         `json:"tasks_enabled"`
+	TasksRunning  bool         `json:"tasks_running"`
 	WatchDirs     []string     `json:"watch_dirs,omitempty"`
 	Counts        statusCounts `json:"counts"`
 	Config        *configView  `json:"config,omitempty"`
@@ -48,6 +50,7 @@ type configView struct {
 	CleanupDryRun     bool   `json:"cleanup_dry_run"`
 	UploadConcurrency int    `json:"upload_concurrency"`
 	UIListen          string `json:"ui_listen"`
+	TasksEnabled      bool   `json:"tasks_enabled"`
 }
 
 // fileItem is one row in GET /api/files.
@@ -86,6 +89,33 @@ type retryResult struct {
 	OK    bool   `json:"ok"`
 	Error string `json:"error"`
 }
+
+type tasksRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+type precheckItem struct {
+	Key     string `json:"key"`
+	SrcPath string `json:"src_path"`
+	Size    int64  `json:"size"`
+}
+
+// precheckReport is a read-only dry run: which files would be uploaded if tasks
+// were started. It is persisted to <SyncStatusDir>/precheck.json.
+type precheckReport struct {
+	GeneratedAt     string         `json:"generated_at"`
+	WatchDirs       []string       `json:"watch_dirs"`
+	MinFileSize     int64          `json:"min_file_size"`
+	Scanned         int            `json:"scanned"`
+	SkippedExt      int            `json:"skipped_ext"`
+	TooSmall        int            `json:"too_small"`
+	AlreadySynced   int            `json:"already_synced"`
+	Candidates      []precheckItem `json:"candidates"`
+	CandidatesTotal int            `json:"candidates_total"`
+	CandidatesBytes int64          `json:"candidates_bytes"`
+}
+
+const precheckFileName = "precheck.json"
 
 // ---- handlers ----------------------------------------------------------
 
@@ -226,6 +256,10 @@ func (w *WebServer) handleRetry(rw http.ResponseWriter, r *http.Request) {
 		writeError(rw, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if !w.sup.TasksRunning() {
+		writeError(rw, http.StatusConflict, "tasks are paused; start tasks before retrying")
+		return
+	}
 	cfg, st, _, ok := w.sup.Snapshot()
 	if !ok {
 		writeError(rw, http.StatusServiceUnavailable, "supervisor not running")
@@ -317,6 +351,10 @@ func (w *WebServer) handleCleanupRun(rw http.ResponseWriter, r *http.Request) {
 		writeError(rw, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if !w.sup.TasksRunning() {
+		writeError(rw, http.StatusConflict, "tasks are paused; start tasks before running cleanup")
+		return
+	}
 	cl := w.sup.Cleanup()
 	if cl == nil {
 		writeError(rw, http.StatusServiceUnavailable, "supervisor not running")
@@ -330,6 +368,67 @@ func (w *WebServer) handleCleanupRun(rw http.ResponseWriter, r *http.Request) {
 	writeJSON(rw, http.StatusOK, map[string]int{"processed": n})
 }
 
+// handleTasks starts or pauses the runtime tasks (watcher/pipeline/cleanup).
+func (w *WebServer) handleTasks(rw http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(rw, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req tasksRequest
+	if err := readJSON(r, &req); err != nil {
+		writeError(rw, http.StatusBadRequest, fmt.Sprintf("invalid body: %v", err))
+		return
+	}
+	if req.Enabled {
+		if err := w.sup.Resume(r.Context()); err != nil {
+			writeError(rw, http.StatusInternalServerError, err.Error())
+			return
+		}
+	} else {
+		w.sup.Pause()
+	}
+	writeJSON(rw, http.StatusOK, statusPayload(r.Context(), w.sup))
+}
+
+// handlePrecheck runs (POST) or returns (GET) the upload pre-check report. It
+// only reads the filesystem and writes the report file, so it is allowed while
+// tasks are paused.
+func (w *WebServer) handlePrecheck(rw http.ResponseWriter, r *http.Request) {
+	cfg, st, _, ok := w.sup.Snapshot()
+	if !ok {
+		writeError(rw, http.StatusServiceUnavailable, "state not initialized")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		data, err := os.ReadFile(filepath.Join(cfg.SyncStatusDir, precheckFileName))
+		if err != nil {
+			if os.IsNotExist(err) {
+				writeError(rw, http.StatusNotFound, "no pre-check report yet")
+				return
+			}
+			writeError(rw, http.StatusInternalServerError, err.Error())
+			return
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		rw.WriteHeader(http.StatusOK)
+		_, _ = rw.Write(data)
+	case http.MethodPost:
+		rep, err := runPrecheck(cfg, st)
+		if err != nil {
+			writeError(rw, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if err := writePrecheck(cfg.SyncStatusDir, rep); err != nil {
+			// The report is best-effort; still return it to the caller.
+			w.log.Warn("precheck: persist report failed", "err", err)
+		}
+		writeJSON(rw, http.StatusOK, rep)
+	default:
+		writeError(rw, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
 // ---- helpers -----------------------------------------------------------
 
 func statusPayload(ctx context.Context, sup *Supervisor) statusResponse {
@@ -339,7 +438,13 @@ func statusPayload(ctx context.Context, sup *Supervisor) statusResponse {
 		if errMsg == "" {
 			errMsg = "supervisor not running"
 		}
-		return statusResponse{OK: false, Error: errMsg, Counts: statusCounts{}}
+		return statusResponse{
+			OK:           false,
+			Error:        errMsg,
+			Counts:       statusCounts{},
+			TasksEnabled: sup.TasksEnabled(),
+			TasksRunning: sup.TasksRunning(),
+		}
 	}
 
 	started := sup.StartedAt()
@@ -362,6 +467,8 @@ func statusPayload(ctx context.Context, sup *Supervisor) statusResponse {
 		StartedAt:     started.UTC().Format(time.RFC3339),
 		UptimeSeconds: uptime,
 		OpenListPing:  pingOK,
+		TasksEnabled:  sup.TasksEnabled(),
+		TasksRunning:  sup.TasksRunning(),
 		WatchDirs:     cfg.WatchDirs,
 		Config: &configView{
 			OpenListURL:       cfg.OpenListURL,
@@ -369,6 +476,7 @@ func statusPayload(ctx context.Context, sup *Supervisor) statusResponse {
 			CleanupDryRun:     cfg.CleanupDryRun,
 			UploadConcurrency: cfg.UploadConcurrency,
 			UIListen:          cfg.UIListen,
+			TasksEnabled:      sup.TasksEnabled(),
 		},
 	}
 
@@ -484,6 +592,73 @@ func unsyncedFiles(cfg *Config, st *StateManager) ([]*StatusRecord, error) {
 		}
 	}
 	return out, nil
+}
+
+// runPrecheck walks the watch dirs and reports which files would be uploaded if
+// tasks were running. It never touches sync status records.
+func runPrecheck(cfg *Config, st *StateManager) (*precheckReport, error) {
+	rep := &precheckReport{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		WatchDirs:   cfg.WatchDirs,
+		MinFileSize: cfg.MinFileSize,
+		Candidates:  []precheckItem{},
+	}
+	for _, root := range cfg.WatchDirs {
+		err := filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil // skip unreadable entries
+			}
+			if info.IsDir() {
+				return nil
+			}
+			rep.Scanned++
+			if !videoExts[strings.ToLower(filepath.Ext(p))] {
+				rep.SkippedExt++
+				return nil
+			}
+			if info.Size() <= cfg.MinFileSize {
+				rep.TooSmall++
+				return nil
+			}
+			key, ok := keyForPath(cfg.WatchDirs, p)
+			if !ok {
+				return nil
+			}
+			synced, err := st.AlreadySynced(key)
+			if err != nil {
+				return nil
+			}
+			if synced {
+				rep.AlreadySynced++
+				return nil
+			}
+			rep.Candidates = append(rep.Candidates, precheckItem{Key: key, SrcPath: p, Size: info.Size()})
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	sort.Slice(rep.Candidates, func(i, j int) bool { return rep.Candidates[i].Key < rep.Candidates[j].Key })
+	rep.CandidatesTotal = len(rep.Candidates)
+	for _, c := range rep.Candidates {
+		rep.CandidatesBytes += c.Size
+	}
+	return rep, nil
+}
+
+// writePrecheck persists a report atomically under the status dir. The file
+// lives beside the date buckets and is ignored by record scanning.
+func writePrecheck(dir string, rep *precheckReport) error {
+	data, err := json.MarshalIndent(rep, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := filepath.Join(dir, precheckFileName+".tmp")
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, filepath.Join(dir, precheckFileName))
 }
 
 // keyForPath returns the slash-separated path relative to whichever watch root

@@ -407,3 +407,103 @@ func TestAPI_CleanupRun(t *testing.T) {
 		t.Errorf("processed = %d, want >= 1", resp.Processed)
 	}
 }
+
+func TestAPI_Status_TaskFields(t *testing.T) {
+	env := newTestSupervisor(t)
+	srv := env.server(t)
+
+	var body struct {
+		TasksEnabled bool `json:"tasks_enabled"`
+		TasksRunning bool `json:"tasks_running"`
+	}
+	if code := getJSON(t, srv.URL+"/api/status", &body); code != http.StatusOK {
+		t.Fatalf("status code = %d, want 200", code)
+	}
+	if !body.TasksEnabled || !body.TasksRunning {
+		t.Errorf("tasks_enabled=%v tasks_running=%v, want true/true", body.TasksEnabled, body.TasksRunning)
+	}
+}
+
+func TestAPI_Tasks_PauseResumeAndGuards(t *testing.T) {
+	env := newTestSupervisor(t)
+	srv := env.server(t)
+
+	// Pause.
+	var paused statusResponse
+	if code := doJSON(t, http.MethodPost, srv.URL+"/api/tasks", map[string]bool{"enabled": false}, &paused); code != http.StatusOK {
+		t.Fatalf("tasks pause code = %d, want 200", code)
+	}
+	if paused.TasksRunning || paused.TasksEnabled {
+		t.Errorf("after pause: enabled=%v running=%v, want false/false", paused.TasksEnabled, paused.TasksRunning)
+	}
+
+	// State-changing operations must be rejected while paused.
+	if code := doJSON(t, http.MethodPost, srv.URL+"/api/retry", map[string]any{"keys": []string{"Movies/X.mkv"}}, nil); code != http.StatusConflict {
+		t.Errorf("retry while paused = %d, want 409", code)
+	}
+	if code := doJSON(t, http.MethodPost, srv.URL+"/api/cleanup/run", map[string]any{}, nil); code != http.StatusConflict {
+		t.Errorf("cleanup while paused = %d, want 409", code)
+	}
+
+	// Resume.
+	var resumed statusResponse
+	if code := doJSON(t, http.MethodPost, srv.URL+"/api/tasks", map[string]bool{"enabled": true}, &resumed); code != http.StatusOK {
+		t.Fatalf("tasks resume code = %d, want 200", code)
+	}
+	if !resumed.TasksRunning || !resumed.TasksEnabled {
+		t.Errorf("after resume: enabled=%v running=%v, want true/true", resumed.TasksEnabled, resumed.TasksRunning)
+	}
+	// Retry is no longer blocked (empty request → 200 with no results).
+	if code := doJSON(t, http.MethodPost, srv.URL+"/api/retry", map[string]any{}, nil); code != http.StatusOK {
+		t.Errorf("retry after resume = %d, want 200", code)
+	}
+}
+
+func TestAPI_Precheck_WhilePaused(t *testing.T) {
+	env := newTestSupervisor(t)
+	srv := env.server(t)
+
+	// Pause so the watcher does not consume the file we are about to add.
+	doJSON(t, http.MethodPost, srv.URL+"/api/tasks", map[string]bool{"enabled": false}, nil)
+
+	if err := os.MkdirAll(filepath.Join(env.watch, "Movies"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(env.watch, "Movies", "A.mkv"), make([]byte, 2048), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var rep precheckReport
+	if code := doJSON(t, http.MethodPost, srv.URL+"/api/precheck", map[string]any{}, &rep); code != http.StatusOK {
+		t.Fatalf("precheck POST = %d, want 200", code)
+	}
+	if rep.CandidatesTotal != 1 {
+		t.Fatalf("candidates_total = %d, want 1 (%+v)", rep.CandidatesTotal, rep.Candidates)
+	}
+	if rep.Candidates[0].Key != "Movies/A.mkv" {
+		t.Errorf("candidate key = %q, want Movies/A.mkv", rep.Candidates[0].Key)
+	}
+	if rep.CandidatesBytes != 2048 {
+		t.Errorf("candidates_bytes = %d, want 2048", rep.CandidatesBytes)
+	}
+	if _, err := os.Stat(filepath.Join(env.syncDir, precheckFileName)); err != nil {
+		t.Errorf("precheck report not persisted: %v", err)
+	}
+
+	// GET returns the persisted report.
+	var got precheckReport
+	if code := getJSON(t, srv.URL+"/api/precheck", &got); code != http.StatusOK {
+		t.Fatalf("precheck GET = %d, want 200", code)
+	}
+	if got.CandidatesTotal != 1 {
+		t.Errorf("GET candidates_total = %d, want 1", got.CandidatesTotal)
+	}
+}
+
+func TestAPI_Precheck_GetWithoutReport(t *testing.T) {
+	env := newTestSupervisor(t)
+	srv := env.server(t)
+	if code := getJSON(t, srv.URL+"/api/precheck", nil); code != http.StatusNotFound {
+		t.Errorf("precheck GET without report = %d, want 404", code)
+	}
+}

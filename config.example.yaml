@@ -27,6 +27,12 @@ openlist_overwrite: false
 # Set to "" (empty) or "-" to disable the UI entirely.
 ui_listen: ":8099"
 
+# Task switch. Default false: on startup cloud-sync does NOT watch/upload or
+# clean up until you enable it (Web UI → Dashboard → Start tasks, or set this
+# to true). While paused you can still browse files and run the upload
+# pre-check. Enabling runs a startup scan and one cleanup pass immediately.
+tasks_enabled: false
+
 # Watched local directories. All paths must exist. fsnotify recurses into
 # each one; uploads from any of them share the same cloud-side layout
 # (under /139yun_media/media/<rel>). Add or remove entries freely.

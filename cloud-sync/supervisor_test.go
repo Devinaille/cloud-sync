@@ -38,6 +38,7 @@ func supervisorTestCfg(t *testing.T) *Config {
 		StabilizeWait: 50 * time.Millisecond, PollInterval: 10 * time.Millisecond,
 		TaskTimeout: 5 * time.Second, MinFileSize: 1024,
 		AllowedPrefixes: []string{watch}, LogLevel: "info",
+		TasksEnabled: true,
 	}
 }
 
@@ -59,6 +60,7 @@ func writeSupervisorYAML(t *testing.T, path, watchDir, syncDir string, concurren
 	fmt.Fprintf(&b, "task_timeout_seconds: 30\n")
 	fmt.Fprintf(&b, "log_level: %q\n", "info")
 	fmt.Fprintf(&b, "ui_listen: %q\n", ":8099")
+	fmt.Fprintf(&b, "tasks_enabled: true\n")
 	fmt.Fprintf(&b, "allowed_source_prefixes:\n  - %q\n", watchDir)
 	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
@@ -75,7 +77,7 @@ func preserveLoadEnv(t *testing.T) {
 		"CLEANUP_AFTER_HOURS", "UPLOAD_CONCURRENCY", "STABILIZE_WAIT_SECONDS",
 		"POLL_INTERVAL_SECONDS", "TASK_TIMEOUT_SECONDS", "LOG_LEVEL", "LOG_FILE",
 		"UI_LISTEN", "CLEANUP_DRY_RUN", "OPENLIST_OVERWRITE",
-		"ALLOWED_SOURCE_PREFIXES",
+		"TASKS_ENABLED", "ALLOWED_SOURCE_PREFIXES",
 	} {
 		t.Setenv(k, os.Getenv(k))
 	}
@@ -105,8 +107,104 @@ func TestSupervisor_StartStop(t *testing.T) {
 	if sup.GenerationActive() {
 		t.Error("GenerationActive = true after Stop")
 	}
-	if _, _, _, ok := sup.Snapshot(); ok {
-		t.Error("Snapshot ok = true after Stop")
+	// State is retained after Stop so the Web UI can still browse/precheck.
+	if _, _, _, ok := sup.Snapshot(); !ok {
+		t.Error("Snapshot ok = false after Stop; state should remain available")
+	}
+}
+
+// TestSupervisor_TasksDisabledByDefault verifies that a config with
+// TasksEnabled=false yields a supervisor whose tasks are not running but whose
+// state is still available for the API.
+func TestSupervisor_TasksDisabledByDefault(t *testing.T) {
+	cfg := supervisorTestCfg(t)
+	cfg.TasksEnabled = false
+	sup := NewSupervisor("", cfg, supervisorTestLogger(), SupervisorDeps{NewUploader: mockUploaderFactory()})
+
+	if err := sup.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if sup.TasksEnabled() {
+		t.Error("TasksEnabled = true, want false")
+	}
+	if sup.TasksRunning() {
+		t.Error("TasksRunning = true, want false")
+	}
+	if _, _, _, ok := sup.Snapshot(); !ok {
+		t.Error("Snapshot ok = false; state should be available while paused")
+	}
+	sup.Stop()
+}
+
+// TestSupervisor_PauseResume verifies the runtime task switch.
+func TestSupervisor_PauseResume(t *testing.T) {
+	cfg := supervisorTestCfg(t)
+	sup := NewSupervisor("", cfg, supervisorTestLogger(), SupervisorDeps{NewUploader: mockUploaderFactory()})
+
+	if err := sup.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if !sup.TasksRunning() {
+		t.Fatal("TasksRunning = false after Start")
+	}
+
+	sup.Pause()
+	if sup.TasksRunning() {
+		t.Error("TasksRunning = true after Pause")
+	}
+	if sup.TasksEnabled() {
+		t.Error("TasksEnabled = true after Pause")
+	}
+	if _, _, _, ok := sup.Snapshot(); !ok {
+		t.Error("Snapshot ok = false after Pause; state should remain available")
+	}
+
+	if err := sup.Resume(context.Background()); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	if !sup.TasksRunning() {
+		t.Error("TasksRunning = false after Resume")
+	}
+	if !sup.TasksEnabled() {
+		t.Error("TasksEnabled = false after Resume")
+	}
+	sup.Stop()
+}
+
+// TestSupervisor_ReloadPreservesPause verifies a config reload does not
+// silently re-enable paused tasks (the runtime switch is authoritative).
+func TestSupervisor_ReloadPreservesPause(t *testing.T) {
+	preserveLoadEnv(t)
+	dir := t.TempDir()
+	watch := filepath.Join(dir, "media")
+	syncDir := filepath.Join(dir, ".sync_status")
+	for _, d := range []string{watch, syncDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfgPath := filepath.Join(dir, "cloud-sync.yaml")
+	writeSupervisorYAML(t, cfgPath, watch, syncDir, 2)
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	sup := NewSupervisor(cfgPath, cfg, supervisorTestLogger(), SupervisorDeps{NewUploader: mockUploaderFactory()})
+	if err := sup.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer sup.Stop()
+
+	sup.Pause()
+	if err := sup.Reload(context.Background()); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	if sup.TasksRunning() {
+		t.Error("TasksRunning = true after Reload while paused")
+	}
+	if _, _, _, ok := sup.Snapshot(); !ok {
+		t.Error("Snapshot ok = false after paused Reload")
 	}
 }
 

@@ -82,6 +82,22 @@
             <p class="muted" id="cleanup-mode" data-i18n="maint.modeUnknown">Cleanup mode unknown.</p>
             <button class="btn primary" type="button" id="cleanup-btn" data-i18n="maint.run">Run cleanup now</button>
           </div>
+
+          <div class="card">
+            <h2 data-i18n="tasks.title">Tasks</h2>
+            <p class="muted"><span class="badge" id="tasks-badge" data-i18n="tasks.unknown">Unknown</span></p>
+            <button class="btn primary" type="button" id="tasks-toggle" data-i18n="tasks.start">Start tasks</button>
+            <p class="muted small" data-i18n="tasks.note">
+              Tasks are off by default; starting them begins watching/uploading and cleanup.
+            </p>
+          </div>
+
+          <div class="card">
+            <h2 data-i18n="precheck.title">Upload pre-check</h2>
+            <p class="muted" id="precheck-summary" data-i18n="precheck.none">No pre-check yet.</p>
+            <button class="btn" type="button" id="precheck-btn" data-i18n="precheck.run">Run pre-check</button>
+            <ul class="dirs" id="precheck-list"></ul>
+          </div>
         </div>
       </section>
 

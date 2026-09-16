@@ -29,6 +29,10 @@ type Config struct {
 	LogLevel          string
 	LogFile           string
 	UIListen          string
+	// TasksEnabled is the initial task state. Default false: watching/uploading
+	// and cleanup are opt-in so a fresh deploy does not start mutating the
+	// cloud before an operator confirms (see also the precheck endpoint).
+	TasksEnabled bool
 }
 
 const minFileSizeBytes = 100 * 1024 * 1024 // 100MB
@@ -58,6 +62,7 @@ type fileConfig struct {
 	LogLevel              string   `yaml:"log_level"`
 	LogFile               string   `yaml:"log_file"`
 	UIListen              *string  `yaml:"ui_listen"`
+	TasksEnabled          *bool    `yaml:"tasks_enabled"`
 }
 
 // Load builds a Config from an optional YAML file plus process environment.
@@ -130,6 +135,9 @@ func loadWithFile(path string) (*Config, error) {
 	if f.UIListen != nil {
 		os.Setenv("UI_LISTEN", *f.UIListen)
 	}
+	if f.TasksEnabled != nil {
+		os.Setenv("TASKS_ENABLED", strconv.FormatBool(*f.TasksEnabled))
+	}
 	// Bool: only override env when the YAML actually set the key. Pointer-
 	// nil distinguishes "absent" from "explicitly false".
 	if f.CleanupDryRun != nil {
@@ -171,6 +179,15 @@ func loadFromEnv() (*Config, error) {
 		cfg.UIListen = v
 	} else {
 		cfg.UIListen = ":8099"
+	}
+	// Tasks default to disabled: require an explicit opt-in (config or UI).
+	cfg.TasksEnabled = false
+	if v, ok := os.LookupEnv("TASKS_ENABLED"); ok && v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("config: TASKS_ENABLED must be bool, got %q", v)
+		}
+		cfg.TasksEnabled = b
 	}
 
 	// comma-split prefixes

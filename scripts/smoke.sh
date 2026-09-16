@@ -61,6 +61,7 @@ export POLL_INTERVAL_SECONDS=1
 export TASK_TIMEOUT_SECONDS=60
 export LOG_LEVEL=debug
 export LOG_FILE=
+export TASKS_ENABLED=true   # tasks are opt-in; the smoke test needs them on
 # Non-default port so the smoke UI doesn't clash with a real instance.
 export UI_LISTEN=:18099
 

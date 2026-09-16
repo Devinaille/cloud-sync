@@ -32,3 +32,6 @@ log_level: info
 log_file: ""
 
 ui_listen: ":__UI_PORT__"
+
+# The local playground enables tasks so a dropped file syncs immediately.
+tasks_enabled: true

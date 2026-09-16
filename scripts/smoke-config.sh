@@ -51,6 +51,7 @@ export SYNC_STATUS_DIR="$WS/.sync_status"
 export ALLOWED_SOURCE_PREFIXES="$WS/media,$WS/ani-rss"
 export CLEANUP_AFTER_HOURS=72
 export LOG_FILE=
+export TASKS_ENABLED=true   # overridden by tasks_enabled in the YAML below
 # Non-default port so the smoke UI doesn't clash with a real instance.
 export UI_LISTEN=:18099
 
@@ -68,6 +69,7 @@ stabilize_wait_seconds: 5
 cleanup_dry_run: true
 poll_interval_seconds: 1
 task_timeout_seconds: 60
+tasks_enabled: true
 EOF
 
 # /config/cloud-sync.yaml is the production default; we pass an explicit
