@@ -19,6 +19,7 @@ type Config struct {
 	SyncStatusDir     string
 	CleanupAfter      time.Duration
 	CleanupDryRun     bool
+	OpenListOverwrite bool
 	UploadConcurrency int
 	StabilizeWait     time.Duration
 	PollInterval      time.Duration
@@ -47,6 +48,7 @@ type fileConfig struct {
 	// overwrite a CLEANUP_DRY_RUN env value with "false" — violating the
 	// documented "missing keys fall back to env" contract.
 	CleanupDryRun         *bool    `yaml:"cleanup_dry_run"`
+	OpenListOverwrite     *bool    `yaml:"openlist_overwrite"`
 	UploadConcurrency     int      `yaml:"upload_concurrency"`
 	StabilizeWaitSeconds  int      `yaml:"stabilize_wait_seconds"`
 	PollIntervalSeconds   int      `yaml:"poll_interval_seconds"`
@@ -128,6 +130,9 @@ func loadWithFile(path string) (*Config, error) {
 	if f.CleanupDryRun != nil {
 		os.Setenv("CLEANUP_DRY_RUN", strconv.FormatBool(*f.CleanupDryRun))
 	}
+	if f.OpenListOverwrite != nil {
+		os.Setenv("OPENLIST_OVERWRITE", strconv.FormatBool(*f.OpenListOverwrite))
+	}
 	if len(f.AllowedSourcePrefixes) > 0 {
 		os.Setenv("ALLOWED_SOURCE_PREFIXES", strings.Join(f.AllowedSourcePrefixes, ","))
 	}
@@ -207,6 +212,9 @@ func loadFromEnv() (*Config, error) {
 	}
 
 	if cfg.CleanupDryRun, err = envBool("CLEANUP_DRY_RUN", false); err != nil {
+		return nil, err
+	}
+	if cfg.OpenListOverwrite, err = envBool("OPENLIST_OVERWRITE", false); err != nil {
 		return nil, err
 	}
 

@@ -13,16 +13,16 @@
 1. 如果 `/config/cloud-sync.yaml` **存在**——把里面出现的字段注入进程 env，再走原有 env 解析。文件里**没写**的字段继续走 env，env 也没设的报 required 错误。
 2. 如果 `/config/cloud-sync.yaml` **不存在**——退回纯 env 模式（向后兼容老的 docker-compose 部署）。
 
-字段名与 env 名一一对应（小写下划线 ↔ 大写下划线）。`docker-compose.yml` 默认把仓库里的 `cloud-sync/config.example.yaml` 挂到 `/config/cloud-sync.yaml`，**复制并按需修改即可**：
+字段名与 env 名一一对应（小写下划线 ↔ 大写下划线）。`docker-compose.yml` 默认把仓库里的 `config.example.yaml` 挂到 `/config/cloud-sync.yaml`，**复制并按需修改即可**：
 
 ```bash
-cp cloud-sync/config.example.yaml /your/deploy/path/cloud-sync/config.yaml
+cp config.example.yaml /your/deploy/path/cloud-sync/config.yaml
 # 编辑
 vim /your/deploy/path/cloud-sync/config.yaml
 docker compose restart cloud-sync
 ```
 
-完整字段说明 + 注释见 `cloud-sync/config.example.yaml`。
+完整字段说明 + 注释见 `config.example.yaml`。
 
 ### 优先级
 
@@ -95,7 +95,7 @@ CGO_ENABLED=0 go build -o /tmp/cloud-sync-bin .
 
 #### 3. 启动本地 OpenList mock
 
-`../scripts/mock-openlist.py` 实现 cloud-sync 用到的三个 endpoint（`/api/fs/list`、`/api/fs/copy`、`/api/admin/task/<id>/done`），把"上传"拷贝到本地目录。
+`../scripts/mock-openlist.py` 实现 cloud-sync 用到的三个 OpenList v4 endpoint（`POST /api/fs/list`、`POST /api/fs/copy`、`POST /api/admin/task/copy/info?tid=`），把"上传"拷贝到本地目录。
 
 ```bash
 export OPENLIST_LOCAL_SRC_DIR="$WS"
@@ -159,7 +159,7 @@ ls -lh "$WS/media/Movies/SmokeTest.mkv"
 # 1. cloud-sync 日志（关键行）
 grep '"msg":"pipeline: synced"' "$WS/cloud-sync.log"
 
-# 2. mock 那边落地的"云盘副本"（pipeline 在 src/dst name 上加 `media/` 前缀）
+# 2. mock 那边落地的"云盘副本"（pipeline 在 src_dir/dst_dir 上追加 `media/` 子目录）
 ls -lh "$WS/cloud/media/Movies/SmokeTest.mkv"
 
 # 3. 状态文件
@@ -212,10 +212,10 @@ docker build -t cloud-sync:1.0.0 .
 
 ## Run（部署到 TrueNAS）
 
-`docker-compose.yml` 默认把 `cloud-sync/config.example.yaml` 挂到容器的 `/config/cloud-sync.yaml`，**首次部署先复制一份到本地再编辑**：
+`docker-compose.yml` 默认把 `config.example.yaml` 挂到容器的 `/config/cloud-sync.yaml`，**首次部署先复制一份到本地再编辑**：
 
 ```bash
-cp cloud-sync/config.example.yaml cloud-sync/config.yaml
+cp config.example.yaml cloud-sync/config.yaml
 vim cloud-sync/config.yaml
 # 改 openlist_token 等
 docker compose up -d cloud-sync
@@ -237,19 +237,22 @@ YAML 与 env 同名（小写 ↔ 大写）。下表是底层 env 名：
 | 变量 | 用途 |
 |---|---|
 | `OPENLIST_URL`, `OPENLIST_TOKEN` | OpenList HTTP endpoint + admin token |
-| `OPENLIST_SRC_STORAGE` | OpenList 内 local 存储挂载路径（`/local_media`） |
-| `OPENLIST_DST_STORAGE` | OpenList 内 139yun 存储挂载路径（`/139yun_media`） |
+| `OPENLIST_SRC_STORAGE` | OpenList local 存储**根**（`/local_media`；pipeline 上传时自动追加 `media/` 子目录） |
+| `OPENLIST_DST_STORAGE` | OpenList 139yun 存储**根**（`/139yun_media`；同上追加 `media/`） |
+| `OPENLIST_OVERWRITE` (默认 false) | false=目标已存在时 `skip_existing`（保留云端文件）；true=`overwrite`（覆盖） |
 | `WATCH_DIRS` | 逗号分隔的**绝对**本地路径列表（fsnotify 递归监听每个） |
 | `SYNC_STATUS_DIR` | `.sync_status/` 绝对路径 |
-| `ALLOWED_SOURCE_PREFIXES` | 逗号分隔，cleanup 防御性白名单（必须包含两个 WATCH_DIR） |
-| `CLEANUP_AFTER_HOURS` (默认 72) | 清理延迟 |
-| `CLEANUP_DRY_RUN` (默认 false) | true=只打日志不删，false=真删 |
-| `UPLOAD_CONCURRENCY` (默认 2) | 上传并发上限 |
-| `STABILIZE_WAIT_SECONDS` (默认 30) | 等文件 size+mtime 稳定多久才上传 |
-| `POLL_INTERVAL_SECONDS` (默认 3) | OpenList 任务状态轮询间隔 |
-| `TASK_TIMEOUT_SECONDS` (默认 1800) | 单次任务超时 |
+| `ALLOWED_SOURCE_PREFIXES` | 逗号分隔，cleanup 防御性白名单（必须包含每个 WATCH_DIR） |
+| `CLEANUP_AFTER_HOURS` | 清理延迟（小时） |
+| `CLEANUP_DRY_RUN` | true=只打日志不删，false=真删（代码默认 false） |
+| `UPLOAD_CONCURRENCY` | 上传并发上限 |
+| `STABILIZE_WAIT_SECONDS` | 等文件 size+mtime 稳定多久才上传 |
+| `POLL_INTERVAL_SECONDS` | OpenList 任务状态轮询间隔 |
+| `TASK_TIMEOUT_SECONDS` | 单次任务超时 |
 | `LOG_LEVEL` (debug/info/warn/error) | 日志等级 |
 | `LOG_FILE` (空=stdout) | 日志文件路径；空表示 stdout（由 docker compose 收集） |
+
+> **默认值说明**：除 `CLEANUP_DRY_RUN`（代码默认 false）和 `LOG_FILE`（可选）外，上表数值项**没有代码默认值**——YAML/env 都没设会启动报错。`config.example.yaml` 给出的 72 / 2 / 30 / 3 / 1800 只是推荐示例。
 
 **未通过 env / config 暴露**：`MinFileSize` 硬编码 100 MB（编译时常量）。要调，改源码 `cloud-sync/config.go:minFileSizeBytes` 后重 build。
 
@@ -277,6 +280,8 @@ YAML 与 env 同名（小写 ↔ 大写）。下表是底层 env 名：
 | `openlist ping failed` | OpenList URL 错、token 无效、或 `/api/fs/list` 路由不通。`curl -X POST "$OPENLIST_URL/api/fs/list"` 验证。 |
 | 文件落地但 cloud 没副本 | mock 没启或 `OPENLIST_LOCAL_SRC_DIR` / `OPENLIST_LOCAL_DST_DIR` 不对。看 mock stdout。 |
 | 完全没反应 | 文件 < 100 MB（MinFileSize 是硬编码）。`ls -lh` 看一下。 |
-| `.sync_status` 不出现 | watch 路径不在 `WATCH_*_DIR` 内，或 `ALLOWED_SOURCE_PREFIXES` 把它挡掉了。`LOG_LEVEL=debug` 看 `pipeline: path not whitelisted` / `too small`。 |
+| `.sync_status` 不出现 | watch 路径不在 `WATCH_DIRS` 内，或 `ALLOWED_SOURCE_PREFIXES` 把它挡掉了。`LOG_LEVEL=debug` 看 `pipeline: path not whitelisted` / `too small`。 |
 | cleanup 没日志 | `CLEANUP_DRY_RUN` 默认 false 时真删，但只在 `CleanupAt < now` 才动。改 `cleanup_at` 过去时间或调小 `CLEANUP_AFTER_HOURS`。 |
+| 重传同一个文件，云端内容没变 | 默认 `OPENLIST_OVERWRITE=false` → `skip_existing=true`，目标已存在就跳过。要覆盖：把配置文件的 `openlist_overwrite` 改为 `true`（或删掉该 key 再用 env `OPENLIST_OVERWRITE=true`——**文件值优先于 env**）。 |
+| `code=403 msg=file [X] exists` | 客户端同时发了 `overwrite=false` + `skip_existing=false`（不该发生；检查配置）。 |
 | 文件改了但容器还是旧值 | 配置文件是挂载的（:ro），改完主机文件后 `docker compose restart cloud-sync`，不是 `up`。 |

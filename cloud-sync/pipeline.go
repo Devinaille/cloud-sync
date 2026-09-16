@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 )
 
 type Uploader interface {
-	Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string) (string, error)
+	Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string, overwrite bool) (string, error)
 	TaskDone(ctx context.Context, taskID string) (TaskStatus, error)
 }
 
@@ -84,7 +84,7 @@ func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
 	}
 
 	// 3. compute key (rel-path under source root) and src/dst names for OpenList.
-	key, srcName, dstName := p.computeKey(ev.Path)
+	key, srcDir, srcName, dstDir, dstName := p.computeKey(ev.Path)
 	if key == "" {
 		return
 	}
@@ -124,7 +124,7 @@ func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
 	defer func() { <-p.sem }()
 
 	// 5. upload with retry.
-	if err := p.uploadWithRetry(ctx, key, ev.Path, srcName, dstName, info); err != nil {
+	if err := p.uploadWithRetry(ctx, key, ev.Path, srcDir, srcName, dstDir, dstName, info); err != nil {
 		p.log.Error("pipeline: upload failed", "key", key, "err", err)
 		// Only persist a "failed" record when the parent context is still
 		// active. If the parent is cancelled (shutdown / restart), the
@@ -140,11 +140,12 @@ func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
 }
 
 // computeKey maps an absolute source path to the state key and the OpenList
-// src/dst names. The key is the path relative to whichever watch root the file
-// lives under; src/dst names prefix that relative path with the single
-// "media" storage subdir (all watch dirs share the same cloud-side layout).
-func (p *Pipeline) computeKey(absPath string) (key, srcName, dstName string) {
-	const sub = "media"
+// src/dst dir+name. The key is the path relative to whichever watch root the
+// file lives under (slash-separated). src/dst dirs prefix the parent of key
+// with the configured storage root; src/dst names are the basename of key.
+// Paths use forward slashes (path package) because OpenList v4 expects the
+// same shape regardless of host OS.
+func (p *Pipeline) computeKey(absPath string) (key, srcDir, srcName, dstDir, dstName string) {
 	var root string
 	for _, r := range p.cfg.WatchDirs {
 		if hasPrefix(absPath, r) {
@@ -154,26 +155,43 @@ func (p *Pipeline) computeKey(absPath string) (key, srcName, dstName string) {
 	}
 	if root == "" {
 		p.log.Warn("pipeline: file outside watch roots", "path", absPath)
-		return "", "", ""
+		return "", "", "", "", ""
 	}
 	rel, err := filepath.Rel(root, absPath)
 	if err != nil {
 		p.log.Warn("pipeline: rel path", "path", absPath, "err", err)
-		return "", "", ""
+		return "", "", "", "", ""
 	}
 	key = filepath.ToSlash(rel)
-	srcName = filepath.ToSlash(filepath.Join(sub, rel))
-	dstName = srcName // 1:1 under cloud root
+	// Both watch dirs (media/, ani-rss/) live under a single "media" prefix
+	// on the OpenList storage (see ARCHITECTURE.md §7). We add it here so
+	// OPENLIST_SRC_STORAGE can stay bound to the storage root (e.g.
+	// /local_media) without the user having to append "/media".
+	const storageSubdir = "media"
+	parent := path.Dir(key)
+	if parent == "." {
+		parent = ""
+	}
+	srcName = path.Base(key)
+	srcDir = p.cfg.SrcStorage + "/" + storageSubdir
+	if parent != "" {
+		srcDir = srcDir + "/" + parent
+	}
+	dstName = srcName
+	dstDir = p.cfg.DstStorage + "/" + storageSubdir
+	if parent != "" {
+		dstDir = dstDir + "/" + parent
+	}
 	return
 }
 
-func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcName, dstName string, info os.FileInfo) error {
+func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcDir, srcName, dstDir, dstName string, info os.FileInfo) error {
 	const maxAttempts = 3
 	var lastErr error
 	backoff := time.Second
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		taskCtx, cancel := context.WithTimeout(ctx, p.cfg.TaskTimeout)
-		taskID, err := p.up.Copy(taskCtx, p.cfg.SrcStorage, srcName, p.cfg.DstStorage, dstName)
+		taskID, err := p.up.Copy(taskCtx, srcDir, srcName, dstDir, dstName, p.cfg.OpenListOverwrite)
 		if err != nil {
 			cancel()
 			lastErr = err
@@ -210,7 +228,7 @@ func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcName, d
 					SrcPath:        absPath,
 					SrcSize:        info.Size(),
 					SrcMtime:       info.ModTime().UTC(),
-					CloudPath:      "/" + strings.TrimPrefix(p.cfg.DstStorage, "/") + "/" + dstName,
+					CloudPath:      dstDir + "/" + dstName,
 					OpenListTaskID: taskID,
 					SyncedAt:       now,
 					CleanupAt:      now.Add(p.cfg.CleanupAfter),

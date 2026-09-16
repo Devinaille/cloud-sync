@@ -220,14 +220,14 @@ Emby 扫库扫描 /mnt/basic/media/strm_media/
 
 | 操作类型 | 云盘侧 | 本地侧 |
 |---|---|---|
-| 读 | OpenList `GET /api/fs/list` / `GET /api/fs/get` | 直接本地 FS（inotify/stat/read） |
+| 读 | OpenList `POST /api/fs/list`（Ping）/ `/api/fs/get` | 直接本地 FS（inotify/stat/read） |
 | 写 | OpenList `POST /api/fs/copy` | 直接本地 FS（仅 cleanup 写 `.sync_status/`） |
 | 删 | （本架构不删云盘文件，保留历史） | 直接本地 FS（cleanup 子任务） |
-| 状态查询 | OpenList `GET /api/admin/task/{id}/done` | 本地 FS（`.sync_status/`） |
+| 状态查询 | OpenList `POST /api/admin/task/copy/info?tid={id}`（`state==2` 为成功） | 本地 FS（`.sync_status/`） |
 
 **判断成功的唯一标准**：OpenList API 返回值。
 - 云盘文件是否存在：`/api/fs/list` 或 `/api/fs/get`
-- 上传是否完成：`/api/admin/task/.../done` 状态为 `succeeded`
+- 上传是否完成：`/api/fs/copy` 返回的 task 经 `/api/admin/task/copy/info?tid=...` 查询 `state==2`
 - **绝不**通过本地文件存在性推断云盘状态
 
 > 本原则贯穿所有章节：cloud-sync 上传、cleanup 删除判定、人工排查都遵守此约束。
@@ -267,7 +267,7 @@ OpenList 看到的：  /mnt/basic/media/media/Movies/X.mkv  (同一 host)
 
 ### 7.1 上传调用方式
 
-**`POST /api/fs/copy`（推荐）**：
+**`POST /api/fs/copy`（推荐）**：OpenList v4 的 `copy` 接受「源目录 + 条目名列表 + 目标目录」。**没有** `src_name` / `dst_name` 字段（早期设计文档描述有误，已修正）。
 
 ```
 POST /api/fs/copy
@@ -276,11 +276,35 @@ Headers:
   Content-Type: application/json
 Body:
   {
-    "src_dir": "/local_media/media",
-    "src_name": "Movies/Interstellar (2014)/Interstellar.mkv",
-    "dst_dir": "/139yun_media",
-    "dst_name": "media/Movies/Interstellar (2014)/Interstellar.mkv"
+    "src_dir": "/local_media/media/Movies/Interstellar (2014)",
+    "dst_dir": "/139yun_media/media/Movies/Interstellar (2014)",
+    "names": ["Interstellar.mkv"],
+    "overwrite": false,
+    "skip_existing": true,
+    "merge": false
   }
+```
+
+- `names` 是**源目录下**的条目名（文件 basename 或子目录名）。
+- 单文件上传：`src_dir` 指到文件所在目录，`names` 只放 basename。
+- `skip_existing=true`（默认）：目标已存在同名文件 → 静默跳过该条目，**不建任务**。
+- `overwrite=true`：跳过存在性检查，任务执行时覆盖目标（`mergo` 会 `SetExist`）。
+- `merge=true` 仅用于目录合并。
+- 目标目录随任务执行自动递归创建，无需预先 `mkdir`。
+
+**响应**（异步任务数组；同存储同步完成时 `tasks` 为空）：
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "message": "created 1 task(s)",
+    "tasks": [
+      { "id": "abc123", "state": 2, "status": "succeeded", "progress": 100.0, "error": "" }
+    ]
+  }
+}
 ```
 
 **优势**：
@@ -291,26 +315,43 @@ Body:
 
 ### 7.2 任务轮询
 
-`/api/fs/copy` 返回任务 ID（异步），需要轮询：
+`/api/fs/copy` 对**跨存储**复制返回异步任务（`data.tasks[0].id`）。轮询：
 
 ```
-GET /api/admin/task/{task_id}/done
-  → 200 { "code": 200, "data": { "status": "succeeded" } }
-  → 200 { "code": 200, "data": { "status": "pending" } }   继续轮询
-  → 200 { "code": 200, "data": { "status": "failed", "error": "..." } }
+POST /api/admin/task/copy/info?tid=<task_id>
+  → 200 { "code": 200, "data": { "id": "abc123", "state": 2, "status": "succeeded", "error": "" } }
 ```
 
-cloud-sync 间隔 2-5 秒轮询，超时阈值 30 分钟。
+`state` 是 OpenList 内部 `tache.State`：
+
+| state | 含义 | cloud-sync 动作 |
+|---|---|---|
+| 0 | pending | 继续轮询 |
+| 1 | running | 继续轮询 |
+| 2 | succeeded | **成功** |
+| 3 | canceling | 继续轮询 |
+| 4 | canceled | **失败** |
+| 5 | errored（将重试） | 继续轮询 |
+| 6 | failing | 继续轮询 |
+| 7 | failed（重试用尽） | **失败** |
+| 8 | waiting_retry | 继续轮询 |
+| 9 | before_retry | 继续轮询 |
+
+cloud-sync 间隔 `POLL_INTERVAL_SECONDS`（默认 3s）轮询，单任务超时 `TASK_TIMEOUT_SECONDS`（默认 1800s）。
+
+> 同存储复制可能**同步完成**（响应 `tasks` 为空），此时直接视为成功。
 
 ### 7.3 上传成功判定（OpenList API 为唯一标准）
 
-**成功标志**：`POST /api/fs/copy` 返回的 `task_id` 通过轮询 `GET /api/admin/task/{task_id}/done` 得到 `status: "succeeded"`。
+**成功标志**（任一）：
+1. `/api/fs/copy` 响应 `data.tasks` 为空（同存储同步完成，或 `skip_existing` 命中已有文件）；
+2. `/api/fs/copy` 返回 `data.tasks[0].id` 后，轮询 `POST /api/admin/task/copy/info?tid=` 得到 `state == 2`。
 
 **不做二次校验**：不再调 `/api/fs/list` 或 `/api/fs/get` 校验云盘文件存在性。OpenList 是云盘交互的唯一权威入口，**其 API 声明成功即视为成功**。
 
 如需"云盘文件存在性"作为二次确认（如人工排查），单独调：
 ```
-GET /api/fs/list?path=/139yun_media/media/Movies/Interstellar (2014)
+POST /api/fs/list   body: { "path": "/139yun_media/media/Movies/Interstellar (2014)" }
 ```
 但**不纳入自动化逻辑**。
 
@@ -354,29 +395,30 @@ inotify 监听:
    │
    ▼
 [VALIDATE]
-  ├─ 路径白名单 (media/ 或 ani-rss/)
+  ├─ 路径白名单 (ALLOWED_SOURCE_PREFIXES)
   ├─ .sync_status 不存在
-  ├─ 文件大小 < OpenList 限制
-  └─ (media/) 要求 .nfo 存在
+  └─ 文件大小 > MinFileSize (100MB)
    │
    ▼
 [COMPUTE_REL_PATH]  计算相对源根的完整目录结构
-  src_rel = <rel_path>     e.g. "Movies/Interstellar (2014)/Interstellar.mkv"
+  rel = <rel_path>     e.g. "Movies/Interstellar (2014)/Interstellar.mkv"
+  parent = path.Dir(rel)
    │
    ▼
 [ENQUEUE]  本地任务队列（防止并发太多，默认并发 2）
    │
    ▼
 [UPLOADING]  POST /api/fs/copy
-  src_dir=/local_media/media, src_name=<src_rel>
-  dst_dir=/139yun_media,   dst_name=media/<src_rel>
-  → 拿到 task_id
+  src_dir=<SrcStorage>/media/<parent>, names=[<basename>]
+  dst_dir=<DstStorage>/media/<parent>
+  skip_existing=true（默认；OPENLIST_OVERWRITE=true 时改发 overwrite=true）
+  → 拿到 tasks[0].id（响应 tasks 为空 = 同步完成 / 已跳过）
    │
    ▼
-[POLLING]   GET /api/admin/task/{task_id}/done (2-5s 间隔)
-  status: pending → 继续轮询
-  status: succeeded → 进入下一步
-  status: failed    → 走错误处理
+[POLLING]   POST /api/admin/task/copy/info?tid=<id>  (默认 3s 间隔)
+  state==2        → 进入下一步
+  state==4 || 7   → 走错误处理
+  其他             → 继续轮询
    │
    ▼
 [MARK_SYNCED]  写 .sync_status
@@ -407,8 +449,6 @@ inotify 监听:
   "src_mtime": "2025-09-14T10:30:00Z",
   "cloud_path": "/139yun_media/media/Movies/Interstellar (2014)/Interstellar.mkv",
   "openlist_task_id": "abc123",
-  "category": "movie",
-  "has_nfo": true,
   "synced_at": "2025-09-14T10:32:15Z",
   "cleanup_at": "2025-09-17T10:32:15Z",
   "status": "synced",

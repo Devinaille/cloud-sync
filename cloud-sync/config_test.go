@@ -3,8 +3,11 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 func setFullEnv(t *testing.T) {
@@ -322,5 +325,75 @@ cleanup_dry_run: false
 	}
 	if cfg.CleanupDryRun {
 		t.Errorf("CleanupDryRun = true, want false (explicit YAML should win)")
+	}
+}
+
+func TestLoad_FileOpenListOverwrite_OverridesEnv(t *testing.T) {
+	// Env false; YAML says true. File wins.
+	setFullEnv(t)
+	t.Setenv("OPENLIST_OVERWRITE", "false")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cloud-sync.yaml")
+	yaml := `
+openlist_url: http://x
+openlist_overwrite: true
+`
+	if err := os.WriteFile(path, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if !cfg.OpenListOverwrite {
+		t.Errorf("OpenListOverwrite = false, want true (explicit YAML should win)")
+	}
+}
+
+func TestLoad_FileOpenListOverwriteAbsent_FallsBackToEnv(t *testing.T) {
+	// Env true; YAML file present but openlist_overwrite omitted. The file
+	// must NOT silently overwrite the env value with false.
+	setFullEnv(t)
+	t.Setenv("OPENLIST_OVERWRITE", "true")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cloud-sync.yaml")
+	yaml := `
+openlist_url: http://x
+`
+	if err := os.WriteFile(path, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if !cfg.OpenListOverwrite {
+		t.Errorf("OpenListOverwrite = false, want true (env should win when YAML key absent)")
+	}
+}
+
+// TestLoad_ExampleConfigParses loads the shipped ../config.example.yaml through
+// the same strict decoder Load uses (KnownFields(true)), so a field renamed in
+// fileConfig without updating the example (or vice versa) fails here instead of
+// silently at deploy time. It stops short of Load's os.Stat path checks, which
+// would fail for /mnt/... on a dev box.
+func TestLoad_ExampleConfigParses(t *testing.T) {
+	data, err := os.ReadFile("../config.example.yaml")
+	if err != nil {
+		t.Fatalf("read example config: %v", err)
+	}
+	var f fileConfig
+	dec := yaml.NewDecoder(strings.NewReader(string(data)))
+	dec.KnownFields(true)
+	if err := dec.Decode(&f); err != nil {
+		t.Fatalf("config.example.yaml does not match fileConfig schema: %v", err)
+	}
+	if f.OpenListOverwrite == nil {
+		t.Error("example config should document openlist_overwrite")
+	}
+	if len(f.WatchDirs) == 0 {
+		t.Error("example config should document watch_dirs")
 	}
 }

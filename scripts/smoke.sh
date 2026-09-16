@@ -10,6 +10,7 @@
 #   - mock landed a copy under $WS/cloud/Movies/
 #   - .sync_status/<date>/Movies/SmokeTest.mkv.json exists
 #   - cleanup tick logged "[DRY-RUN] would delete"
+#   - mock captured a request with names[] (not src_name/dst_name) + skip_existing:true
 #
 # Cleans up $WS and kills the mock on exit.
 
@@ -27,11 +28,15 @@ mkdir -p "$WS"/{media/Movies,ani-rss,cloud,.sync_status}
 
 export OPENLIST_LOCAL_SRC_DIR="$WS"
 export OPENLIST_LOCAL_DST_DIR="$WS/cloud"
+export MOCK_LOG_PATH="/tmp/cloud-sync-smoke-mock.log"
+rm -f "$MOCK_LOG_PATH"   # assertions must read only this run's requests
 python3 "$SCRIPT_DIR/mock-openlist.py" &
 MOCK_PID=$!
 
 cleanup() {
     local rc=$?
+    kill "${CS_PID:-}" 2>/dev/null || true
+    wait "${CS_PID:-}" 2>/dev/null || true
     kill "$MOCK_PID" 2>/dev/null || true
     wait "$MOCK_PID" 2>/dev/null || true
     rm -rf "$WS"
@@ -109,6 +114,17 @@ grep '\[DRY-RUN\]' "$WS/cloud-sync.log.2" || {
 
 # Source file should still exist (dry-run does not delete)
 ls -lh "$WS/media/Movies/SmokeTest.mkv"
+
+echo "--- mock captured OpenList v4 API request ---"
+MLOG=/tmp/cloud-sync-smoke-mock.log
+grep -qF '"names":["SmokeTest.mkv"]' "$MLOG" \
+    || { echo "FAIL: mock request missing names[]"; cat "$MLOG"; exit 1; }
+grep -qF '"skip_existing":true' "$MLOG" \
+    || { echo "FAIL: mock request missing skip_existing:true"; cat "$MLOG"; exit 1; }
+grep -qF '"src_name"' "$MLOG" \
+    && { echo "FAIL: legacy 'src_name' field appeared"; cat "$MLOG"; exit 1; }
+grep -qF '"dst_name"' "$MLOG" \
+    && { echo "FAIL: legacy 'dst_name' field appeared"; cat "$MLOG"; exit 1; }
 
 kill "$CS_PID" 2>/dev/null || true
 wait "$CS_PID" 2>/dev/null || true

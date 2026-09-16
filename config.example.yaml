@@ -13,8 +13,15 @@
 openlist_url:         http://openlist:5244
 openlist_token:       replace-with-openlist-admin-token
 # OpenList storage mount paths (configured inside OpenList itself).
+# These are the STORAGE ROOTS; cloud-sync appends a "media" subdir when it
+# uploads, so files land at <storage_root>/media/<relative path>.
 openlist_src_storage: /local_media
 openlist_dst_storage: /139yun_media
+# How to handle a file that already exists at the destination:
+#   false (default) → send skip_existing=true; OpenList silently keeps the
+#                     existing cloud file (no re-upload, saves bandwidth).
+#   true            → send overwrite=true; OpenList replaces the cloud file.
+openlist_overwrite: false
 
 # Watched local directories. All paths must exist. fsnotify recurses into
 # each one; uploads from any of them share the same cloud-side layout

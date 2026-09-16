@@ -27,7 +27,7 @@ func newMockUploader() *mockUploader {
 	return &mockUploader{taskStatuses: map[string]TaskStatus{}}
 }
 
-func (m *mockUploader) Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string) (string, error) {
+func (m *mockUploader) Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string, overwrite bool) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.copyCalls = append(m.copyCalls, copyCall{srcDir, srcName, dstDir, dstName})
@@ -127,10 +127,10 @@ func TestPipeline_HappyPath(t *testing.T) {
 		t.Fatalf("Copy calls = %d, want 1", len(up.copyCalls))
 	}
 	call := up.copyCalls[0]
-	if call.SrcDir != "/local_media" || call.DstDir != "/139yun_media" {
+	if call.SrcDir != "/local_media/media/Movies" || call.DstDir != "/139yun_media/media/Movies" {
 		t.Errorf("Copy dirs wrong: %+v", call)
 	}
-	if call.SrcName != "media/Movies/X.mkv" || call.DstName != "media/Movies/X.mkv" {
+	if call.SrcName != "X.mkv" || call.DstName != "X.mkv" {
 		t.Errorf("Copy names wrong: src=%q dst=%q", call.SrcName, call.DstName)
 	}
 
@@ -159,6 +159,10 @@ func TestPipeline_WritesAbsoluteSrcPath(t *testing.T) {
 	if rec.SrcPath != src {
 		t.Errorf("SrcPath = %q, want %q", rec.SrcPath, src)
 	}
+	wantCloud := "/139yun_media/media/Movies/Z.mkv"
+	if rec.CloudPath != wantCloud {
+		t.Errorf("CloudPath = %q, want %q", rec.CloudPath, wantCloud)
+	}
 }
 
 type flakyUploader struct {
@@ -166,7 +170,7 @@ type flakyUploader struct {
 	failFirstN int
 }
 
-func (f *flakyUploader) Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string) (string, error) {
+func (f *flakyUploader) Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string, overwrite bool) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.copyCalls = append(f.copyCalls, copyCall{srcDir, srcName, dstDir, dstName})
@@ -257,8 +261,20 @@ func TestPipeline_StartupScan_OnlyUnsynced(t *testing.T) {
 	if len(up.copyCalls) != 1 {
 		t.Errorf("Copy calls = %d, want 1 (only A; B is pre-synced)", len(up.copyCalls))
 	}
-	if len(up.copyCalls) >= 1 && up.copyCalls[0].SrcName != "media/Movies/A.mkv" {
-		t.Errorf("Copy src = %q, want media/Movies/A.mkv", up.copyCalls[0].SrcName)
+	if len(up.copyCalls) >= 1 {
+		call := up.copyCalls[0]
+		if call.SrcName != "A.mkv" {
+			t.Errorf("Copy SrcName = %q, want A.mkv", call.SrcName)
+		}
+		if call.SrcDir != "/local_media/media/Movies" {
+			t.Errorf("Copy SrcDir = %q, want /local_media/media/Movies", call.SrcDir)
+		}
+		if call.DstName != "A.mkv" {
+			t.Errorf("Copy DstName = %q, want A.mkv", call.DstName)
+		}
+		if call.DstDir != "/139yun_media/media/Movies" {
+			t.Errorf("Copy DstDir = %q, want /139yun_media/media/Movies", call.DstDir)
+		}
 	}
 }
 
@@ -270,7 +286,7 @@ type blockingUploader struct {
 	releaseCopy chan struct{}
 }
 
-func (b *blockingUploader) Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string) (string, error) {
+func (b *blockingUploader) Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string, overwrite bool) (string, error) {
 	b.mu.Lock()
 	b.copyCalls = append(b.copyCalls, copyCall{srcDir, srcName, dstDir, dstName})
 	b.mu.Unlock()
@@ -349,7 +365,7 @@ type alwaysFailUploader struct {
 	mockUploader
 }
 
-func (a *alwaysFailUploader) Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string) (string, error) {
+func (a *alwaysFailUploader) Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string, overwrite bool) (string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.copyCalls = append(a.copyCalls, copyCall{srcDir, srcName, dstDir, dstName})
@@ -423,7 +439,7 @@ type firstCopyBlocker struct {
 	releaseFirstCopy chan struct{}
 }
 
-func (b *firstCopyBlocker) Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string) (string, error) {
+func (b *firstCopyBlocker) Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string, overwrite bool) (string, error) {
 	b.mu.Lock()
 	n := len(b.copyCalls)
 	b.copyCalls = append(b.copyCalls, copyCall{srcDir, srcName, dstDir, dstName})

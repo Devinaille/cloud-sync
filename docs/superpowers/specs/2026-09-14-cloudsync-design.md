@@ -86,14 +86,14 @@ cloud-sync/
 ```go
 type Config struct {
     // OpenList
-    OpenListURL   string
-    OpenListToken string
-    SrcStorage    string  // e.g. "/local_media"
-    DstStorage    string  // e.g. "/139yun_media"
+    OpenListURL       string
+    OpenListToken     string
+    SrcStorage        string  // e.g. "/local_media"  (storage root; pipeline appends "media/")
+    DstStorage        string  // e.g. "/139yun_media"
+    OpenListOverwrite bool    // false → skip_existing; true → overwrite
 
-    // Watch paths
-    WatchMediaDir  string
-    WatchAniRSSDir string
+    // Watch dirs (env WATCH_DIRS, comma-separated; each is recursed by fsnotify)
+    WatchDirs []string
 
     // Status
     SyncStatusDir string
@@ -107,27 +107,29 @@ type Config struct {
     StabilizeWait     time.Duration  // STABILIZE_WAIT_SECONDS
     PollInterval      time.Duration  // POLL_INTERVAL_SECONDS
     TaskTimeout       time.Duration  // TASK_TIMEOUT_SECONDS
-    MinFileSize       int64          // derived, 100MB
+    MinFileSize       int64          // derived constant, 100MB
 
     // Safety
-    AllowedPrefixes     []string  // ALLOWED_SOURCE_PREFIXES (comma-split)
-    RequireNFOForMedia  bool
-    RequireNFOForAniRSS bool
+    AllowedPrefixes []string  // ALLOWED_SOURCE_PREFIXES (comma-split)
 
     // Logging
     LogLevel string  // debug|info|warn|error
     LogFile  string  // empty → stdout
 }
 
-func Load() (*Config, error)
+// Load reads an optional YAML config file plus the process environment.
+//   path != "" and file exists → YAML values override env (via os.Setenv);
+//                                keys absent from the file fall back to env.
+//   path == "" or file missing  → environment only.
+// The binary defaults path to /config/cloud-sync.yaml (overridable via os.Args[1]).
+func Load(path string) (*Config, error)
 ```
 
 校验规则：
 - 所有 `string` 必填字段非空
-- 所有路径存在且可读
+- `WatchDirs` / `AllowedPrefixes` 至少一项
 - 数值字段 > 0
-- `AllowedPrefixes` 至少一项
-- 启动时 `os.Stat` 检查目录存在
+- 启动时 `os.Stat` 检查 `WatchDirs` 各项与 `SyncStatusDir` 存在
 
 ### 3.2 `logging`
 
@@ -142,39 +144,32 @@ func Init(level, file string) *slog.Logger
 ### 3.3 `watcher`
 
 ```go
-type Category int
-const (
-    CatMedia Category = iota
-    CatAniRSS
-)
-
 type FileEvent struct {
     Path     string    // absolute path
     Size     int64     // bytes
     Detected time.Time
-    Category Category
 }
 
 type Watcher struct { /* ... */ }
 
-func New(dirs []string, minSize int64, log *slog.Logger) (*Watcher, error)
+func NewWatcher(roots []string, minSize int64, log *slog.Logger) (*Watcher, error)
 func (w *Watcher) Events() <-chan FileEvent
 func (w *Watcher) Errors() <-chan error
 func (w *Watcher) Close() error
 ```
 
 行为：
-- 启动时对每个 dir 做 `filepath.Walk` 收集所有子目录，调用 `fsnotify.Add`
+- 启动时对每个 root 做 `filepath.Walk` 收集所有子目录，调用 `fsnotify.Add`
 - 事件循环只关注 `IN_CLOSE_WRITE` 与 `IN_MOVED_TO`
-- 过滤：扩展名 ∈ {`.mkv` `.mp4` `.ts` `.iso`}，size > minSize
-- Category 判定：父目录包含 `WatchMediaDir` → `CatMedia`，包含 `WatchAniRSSDir` → `CatAniRSS`
+- 过滤：扩展名 ∈ {`.mkv` `.mp4` `.ts` `.iso`}，size > minSize（严格大于）
+- **不区分来源目录**：所有 watch 目录走同一条 pipeline；云端统一落在 `<storage>/media/` 下
 - 内部 Events chan 缓冲 1024（避免 watcher 阻塞）
 
 ### 3.4 `pipeline`
 
 ```go
 type Uploader interface {
-    Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string) (taskID string, err error)
+    Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string, overwrite bool) (taskID string, err error)
     TaskDone(ctx context.Context, taskID string) (TaskStatus, error)
 }
 
@@ -193,7 +188,7 @@ type Pipeline struct {
     sem  chan struct{}  // buffer cap = UploadConcurrency
 }
 
-func New(cfg *Config, log *slog.Logger, up Uploader, st *StateManager) *Pipeline
+func NewPipeline(cfg *Config, log *slog.Logger, up Uploader, st *StateManager) *Pipeline
 func (p *Pipeline) Run(ctx context.Context, events <-chan FileEvent)
 ```
 
@@ -206,19 +201,18 @@ DETECTED
 STABILIZED
   │ validate:
   │   - 路径必须在 AllowedPrefixes 之一
-  │   - state.AlreadySynced(relPath) == false
+  │   - state.AlreadySynced(rel) == false
   │   - size > MinFileSize
-  │   - (CatMedia && RequireNFOForMedia) → 必须存在 .nfo
-  │   - (CatAniRSS && RequireNFOForAniRSS) → 必须存在 .nfo
   │   任一失败 → log + skip
 VALIDATED
   │ acquire sem slot
 QUEUED
-  │ openlist.Copy(srcDir=SrcStorage, srcName=<rel_under_media_or_anirss>,
-  │              dstDir=DstStorage, dstName=<rel>)
-  │ → taskID
+  │ openlist.Copy(srcDir=<SrcStorage>/media/<parent>, srcName=<basename>,
+  │              dstDir=<DstStorage>/media/<parent>, dstName=<basename>,
+  │              overwrite=cfg.OpenListOverwrite)
+  │ → taskID（"" = 同步完成 / skip_existing 命中）
 UPLOADING
-  │ openlist.TaskDone 轮询 PollInterval
+  │ openlist.TaskDone 轮询 PollInterval（taskID=="" 直接成功）
   │   pending → continue
   │   succeeded → SYNCED
   │   failed → FAILED (3 次重试 + 指数退避 1/2/4/8/.../60s)
@@ -258,11 +252,11 @@ func (p *Pipeline) StartupScan(ctx context.Context) error
 ```
 
 启动时执行一次：
-1. 遍历 `WatchMediaDir` + `WatchAniRSSDir` 所有视频文件
+1. 遍历 `WatchDirs` 所有视频文件
 2. 对每个文件计算 relPath，调用 `state.AlreadySynced(relPath)`
 3. 未同步的 → 走与 watcher 事件相同的 pipeline（直接调用内部 `process(ctx, event)`）
 4. 已同步的 → skip
-5. 完成时 log "startup scan done, N new files"
+5. 完成时 log "startup scan done, files=N"
 
 实现为单独的方法，在 `main.go` 启动时 `go p.StartupScan(ctx)`，与 watcher 并行。
 
@@ -276,17 +270,20 @@ type Client struct {
     log     *slog.Logger
 }
 
-func New(baseURL, token string, log *slog.Logger) *Client
+func NewClient(baseURL, token string, log *slog.Logger) *Client
 
-// Ping 在启动时调用，验证连通性
+// Ping 在启动时调用，验证连通性（POST /api/fs/list）
 func (c *Client) Ping(ctx context.Context) error
 
-// Copy 调 POST /api/fs/copy
-// srcName 形如 "media/Movies/X/X.mkv"（含源子目录）
-// dstName 形如 "media/Movies/X/X.mkv"（云盘侧最终路径）
-func (c *Client) Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string) (string, error)
+// Copy 调 POST /api/fs/copy（OpenList v4 真实契约）。
+// srcDir 是源文件所在目录的 mount-path（如 /local_media/media/Movies），
+// srcName 是文件 basename（如 Interstellar.mkv）；dstDir/dstName 同理。
+// overwrite=true 时发 overwrite；否则发 skip_existing=true。
+// 返回任务 ID；响应 tasks 为空（同步完成 / skip_existing 命中）时返回 ""。
+func (c *Client) Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string, overwrite bool) (string, error)
 
-// TaskDone 调 GET /api/admin/task/{id}/done
+// TaskDone 调 POST /api/admin/task/copy/info?tid={id}，按 state 映射：
+//   2 → succeeded;  4|7 → failed;  taskID=="" → 直接 succeeded;  其他 → pending
 func (c *Client) TaskDone(ctx context.Context, taskID string) (TaskStatus, error)
 ```
 
@@ -298,17 +295,26 @@ Authorization: <token>
 Content-Type: application/json
 
 {
-  "src_dir": "/local_media",
-  "src_name": "media/Movies/Interstellar (2014)/Interstellar.mkv",
-  "dst_dir": "/139yun_media",
-  "dst_name": "media/Movies/Interstellar (2014)/Interstellar.mkv"
+  "src_dir": "/local_media/media/Movies/Interstellar (2014)",
+  "dst_dir": "/139yun_media/media/Movies/Interstellar (2014)",
+  "names": ["Interstellar.mkv"],
+  "overwrite": false,
+  "skip_existing": true,
+  "merge": false
 }
 ```
 
 响应：
 
 ```json
-{ "code": 200, "data": { "task_id": "abc123" } }
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "message": "created 1 task(s)",
+    "tasks": [{ "id": "abc123", "state": 2, "status": "succeeded", "error": "" }]
+  }
+}
 ```
 
 错误：
@@ -320,13 +326,12 @@ Content-Type: application/json
 
 ```go
 type StatusRecord struct {
-    SrcPath        string     `json:"src_path"`
+    Key            string     `json:"-"` // rel-path under watch root (disk key; not serialized)
+    SrcPath        string     `json:"src_path"`   // absolute
     SrcSize        int64      `json:"src_size"`
     SrcMtime       time.Time  `json:"src_mtime"`
     CloudPath      string     `json:"cloud_path"`
     OpenListTaskID string     `json:"openlist_task_id"`
-    Category       string     `json:"category"`  // "movie" | "anime"
-    HasNFO         bool       `json:"has_nfo"`
     SyncedAt       time.Time  `json:"synced_at"`
     CleanupAt      time.Time  `json:"cleanup_at"`
     Status         string     `json:"status"`  // "synced" | "failed" | "cleaned"
@@ -376,7 +381,7 @@ type Cleanup struct {
     st  *StateManager
 }
 
-func New(cfg *Config, log *slog.Logger, st *StateManager) *Cleanup
+func NewCleanup(cfg *Config, log *slog.Logger, st *StateManager) *Cleanup
 func (c *Cleanup) Run(ctx context.Context)
 ```
 
@@ -426,9 +431,9 @@ for _, rec := range listForCleanup(now) {
                        [stabilize → validate]
                               │
                               ▼ sem acquire (chan struct{}, cap=UPLOAD_CONCURRENCY)
-                       [openlist.Copy]──task_id──►[openlist.TaskDone loop]
+                       [openlist.Copy]──taskID──►[openlist.TaskDone loop]
                                                           │
-                                                          ▼ status=succeeded
+                                                          ▼ state==2 (succeeded)
                                                        [state.Write]
                                                           │
                                                           ▼ sem release
@@ -501,7 +506,7 @@ ENTRYPOINT ["/usr/local/bin/cloud-sync"]
 |---|---|---|
 | `config_test.go` | env 解析、必填校验、默认值、错误情况 | stdlib |
 | `logging_test.go` | level 过滤、JSON 输出 | `bytes.Buffer` |
-| `watcher_test.go` | 过滤逻辑、Category 判定 | 直接构造 FileEvent |
+| `watcher_test.go` | 扩展名/大小过滤、真实 fsnotify 事件 | temp dir |
 | `pipeline_test.go` | 状态机各分支、并发限流 | mock Uploader + temp dir state |
 | `openlist_test.go` | 真实 HTTP 路径、错误响应 | `httptest.NewServer` |
 | `state_test.go` | 读写、原子性、ListForCleanup 过滤 | temp dir |
