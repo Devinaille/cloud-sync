@@ -257,4 +257,30 @@ git tag v1.0.0     && git push origin v1.0.0       # 正式版
 
 两个 workflow 都支持在 Actions 页面 **Run workflow**（`workflow_dispatch`），填入已存在的 tag 可重跑打包。先跑测试（gofmt/vet/test）再打包，失败即中止。
 
-> ghcr 包默认 private，首次发布后到 GitHub Packages 设置里改为 public 才能匿名拉取。
+> ghcr 包若为 private，需先 `docker login ghcr.io` 才能拉取；改为 public 后匿名可拉。
+
+### 部署发布产物（本地测试）
+
+**方式 1：跑发布的镜像**（不本地构建）：
+
+```bash
+# 直接拉取
+docker pull ghcr.io/devinaille/cloud-sync:v0.1.0-rc1
+
+# 或复用 compose 的端口/挂载/环境，仅替换镜像（--no-build 跳过本地构建）
+cp config.example.yaml config.yaml   # 编辑成真实配置
+CLOUD_SYNC_TAG=v0.1.0-rc1 \
+  docker compose -f docker-compose.yml -f docker-compose.rc.yml up -d --no-build
+docker compose logs -f cloud-sync
+```
+
+**方式 2：跑发布二进制**（无 Docker）：
+
+```bash
+curl -fL -o cs.tgz \
+  https://github.com/Devinaille/cloud-sync/releases/download/v0.1.0-rc1/cloud-sync_v0.1.0-rc1_linux_amd64.tar.gz
+tar xzf cs.tgz
+./cloud-sync_v0.1.0-rc1_linux_amd64/cloud-sync /path/to/cloud-sync.yaml
+```
+
+Web UI：`http://<host>:8099/`（config 里 `ui_listen` 默认 `:8099`）。
