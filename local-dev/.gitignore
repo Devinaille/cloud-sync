@@ -1,0 +1,12 @@
+# cloud-sync local dev playground
+#
+# Throwaway sandbox for running cloud-sync locally (built binary + OpenList
+# mock + Web UI). Only the scripts and template are tracked; everything the
+# playground generates at runtime is ignored.
+
+# runtime data + generated state
+data/
+logs/
+run/
+bin/
+config.yaml

@@ -1,0 +1,34 @@
+# cloud-sync local-dev config template.
+#
+# run.sh copies this to config.yaml and substitutes __BASE__, __MOCK_PORT__,
+# __UI_PORT__. Edit the generated config.yaml (or use the Web UI's Config tab)
+# afterwards. Keep in sync with config.example.yaml at the repo root.
+
+openlist_url: http://127.0.0.1:__MOCK_PORT__
+openlist_token: local-dev-token
+openlist_src_storage: /local_media
+openlist_dst_storage: /139yun_media
+openlist_overwrite: false
+
+watch_dirs:
+  - __BASE__/media
+  - __BASE__/ani-rss
+
+sync_status_dir: __BASE__/.sync_status
+
+allowed_source_prefixes:
+  - __BASE__/media
+  - __BASE__/ani-rss
+
+cleanup_after_hours: 72
+cleanup_dry_run: true
+
+upload_concurrency: 2
+stabilize_wait_seconds: 10
+poll_interval_seconds: 2
+task_timeout_seconds: 300
+
+log_level: info
+log_file: ""
+
+ui_listen: ":__UI_PORT__"
