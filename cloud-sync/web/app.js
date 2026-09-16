@@ -7,6 +7,223 @@
   var STATUS_POLL_MS = 5000;
   var SEARCH_DEBOUNCE_MS = 300;
   var DEFAULT_PAGE_SIZE = 50;
+  var LANG_KEY = "cloudsync.lang";
+
+  // ---- i18n ------------------------------------------------------------
+
+  var I18N = {
+    en: {
+      "brand.sub": "control panel",
+      "conn.aria": "Backend connection status",
+      "conn.connecting": "Connecting\u2026",
+      "conn.ok": "Connected",
+      "conn.degraded": "Degraded",
+      "conn.down": "Unreachable",
+      "conn.downToast": "Cannot reach the cloud-sync backend.",
+      "tabs.aria": "Sections",
+      "tab.dashboard": "Dashboard",
+      "tab.files": "Files",
+      "tab.config": "Config",
+      "dash.degraded": "Degraded:",
+      "status.supervisorDown": "supervisor not running",
+      "state.all": "All",
+      "state.synced": "Synced",
+      "state.failed": "Failed",
+      "state.cleaned": "Cleaned",
+      "state.unsynced": "Unsynced",
+      "state.unknown": "Unknown",
+      "health.title": "Health",
+      "health.openlist": "OpenList",
+      "health.badge.unknown": "Unknown",
+      "health.uptime": "Uptime",
+      "health.started": "Started",
+      "health.uilisten": "UI listen",
+      "watch.title": "Watch directories",
+      "watch.none": "No watch directories configured.",
+      "maint.title": "Maintenance",
+      "maint.modeUnknown": "Cleanup mode unknown.",
+      "maint.dryRun": "Cleanup is in dry-run mode (no files will be deleted).",
+      "maint.live": "Cleanup is live (files may be deleted).",
+      "maint.run": "Run cleanup now",
+      "maint.done": "Cleanup processed {n} item(s).",
+      "maint.failed": "Cleanup failed: {e}",
+      "files.search": "Search path\u2026",
+      "files.retrySelected": "Retry selected",
+      "files.retry": "Retry",
+      "files.selectAll": "Select all rows",
+      "files.select": "Select {key}",
+      "files.empty": "No files match this filter.",
+      "files.page": "Page {page} of {total}",
+      "files.count": "{n} file(s)",
+      "files.retryQueued": "Retry queued: {key}",
+      "files.retryFailed": "Retry failed: {key} \u2014 {err}",
+      "files.retryRequestFailed": "Retry request failed: {e}",
+      "files.retrySummary": "Retry: {ok} queued, {fail} failed.",
+      "files.retryNone": "No matching files to retry.",
+      "files.loadFailed": "Failed to load files: {e}",
+      "th.path": "Path",
+      "th.size": "Size",
+      "th.state": "State",
+      "th.cloud": "Cloud path",
+      "th.syncedAt": "Synced at",
+      "th.cleanupAt": "Cleanup at",
+      "th.error": "Error",
+      "pager.prev": "Prev",
+      "pager.next": "Next",
+      "config.title": "Configuration (YAML)",
+      "config.reload": "Reload from server",
+      "config.save": "Save & Reload",
+      "config.effective": "Effective config",
+      "config.loading": "Loading\u2026",
+      "config.none": "No effective config available.",
+      "config.loadFailed": "Failed to load config: {e}",
+      "config.empty": "Config is empty; refusing to save.",
+      "config.emptyToast": "Config is empty; not saved.",
+      "config.saved": "Config saved and reloaded.",
+      "config.saveFailed": "Save failed: {e}",
+      "cfg.openlist_url": "OpenList URL",
+      "cfg.openlist_overwrite": "Overwrite existing",
+      "cfg.cleanup_dry_run": "Cleanup dry-run",
+      "cfg.upload_concurrency": "Upload concurrency",
+      "cfg.ui_listen": "UI listen",
+      "bool.on": "on",
+      "bool.off": "off",
+      "uptime.h": "h",
+      "uptime.m": "m",
+      "uptime.s": "s",
+      "toast.dismiss": "Dismiss",
+    },
+    zh: {
+      "brand.sub": "控制面板",
+      "conn.aria": "后端连接状态",
+      "conn.connecting": "连接中\u2026",
+      "conn.ok": "已连接",
+      "conn.degraded": "降级运行",
+      "conn.down": "无法连接",
+      "conn.downToast": "无法连接 cloud-sync 后端。",
+      "tabs.aria": "导航",
+      "tab.dashboard": "仪表盘",
+      "tab.files": "文件",
+      "tab.config": "配置",
+      "dash.degraded": "降级运行：",
+      "status.supervisorDown": "supervisor 未运行",
+      "state.all": "全部",
+      "state.synced": "已同步",
+      "state.failed": "失败",
+      "state.cleaned": "已清理",
+      "state.unsynced": "未同步",
+      "state.unknown": "未知",
+      "health.title": "运行状况",
+      "health.openlist": "OpenList",
+      "health.badge.unknown": "未知",
+      "health.uptime": "运行时长",
+      "health.started": "启动时间",
+      "health.uilisten": "UI 监听",
+      "watch.title": "监听目录",
+      "watch.none": "未配置监听目录。",
+      "maint.title": "维护",
+      "maint.modeUnknown": "清理模式未知。",
+      "maint.dryRun": "清理处于 dry-run 模式（不会删除文件）。",
+      "maint.live": "清理已启用（可能删除文件）。",
+      "maint.run": "立即清理",
+      "maint.done": "清理处理了 {n} 项。",
+      "maint.failed": "清理失败：{e}",
+      "files.search": "搜索路径\u2026",
+      "files.retrySelected": "重试选中",
+      "files.retry": "重试",
+      "files.selectAll": "全选",
+      "files.select": "选择 {key}",
+      "files.empty": "没有符合条件的文件。",
+      "files.page": "第 {page} / {total} 页",
+      "files.count": "共 {n} 个文件",
+      "files.retryQueued": "已加入重试：{key}",
+      "files.retryFailed": "重试失败：{key} \u2014 {err}",
+      "files.retryRequestFailed": "重试请求失败:{e}",
+      "files.retrySummary": "重试：{ok} 个已入队，{fail} 个失败。",
+      "files.retryNone": "没有可重试的文件。",
+      "files.loadFailed": "加载文件失败：{e}",
+      "th.path": "路径",
+      "th.size": "大小",
+      "th.state": "状态",
+      "th.cloud": "云盘路径",
+      "th.syncedAt": "同步时间",
+      "th.cleanupAt": "清理时间",
+      "th.error": "错误",
+      "pager.prev": "上一页",
+      "pager.next": "下一页",
+      "config.title": "配置（YAML）",
+      "config.reload": "从服务器重载",
+      "config.save": "保存并重载",
+      "config.effective": "生效配置",
+      "config.loading": "加载中\u2026",
+      "config.none": "无生效配置。",
+      "config.loadFailed": "加载配置失败：{e}",
+      "config.empty": "配置为空，拒绝保存。",
+      "config.emptyToast": "配置为空，未保存。",
+      "config.saved": "配置已保存并重载。",
+      "config.saveFailed": "保存失败：{e}",
+      "cfg.openlist_url": "OpenList 地址",
+      "cfg.openlist_overwrite": "覆盖已有文件",
+      "cfg.cleanup_dry_run": "清理 dry-run",
+      "cfg.upload_concurrency": "上传并发",
+      "cfg.ui_listen": "UI 监听",
+      "bool.on": "开",
+      "bool.off": "关",
+      "uptime.h": "时",
+      "uptime.m": "分",
+      "uptime.s": "秒",
+      "toast.dismiss": "关闭",
+    },
+  };
+
+  var lang = "en";
+
+  function t(key, vars) {
+    var dict = I18N[lang] || I18N.en;
+    var s = dict[key];
+    if (s === undefined) {
+      s = I18N.en[key] !== undefined ? I18N.en[key] : key;
+    }
+    if (vars) {
+      Object.keys(vars).forEach(function (k) {
+        s = s.replace(new RegExp("\\{" + k + "\\}", "g"), String(vars[k]));
+      });
+    }
+    return s;
+  }
+
+  function detectLang() {
+    var saved = null;
+    try {
+      saved = localStorage.getItem(LANG_KEY);
+    } catch (e) {
+      saved = null;
+    }
+    if (saved === "zh" || saved === "en") {
+      return saved;
+    }
+    var nav = (navigator.language || navigator.userLanguage || "en").toLowerCase();
+    return nav.indexOf("zh") === 0 ? "zh" : "en";
+  }
+
+  function applyStaticI18n() {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-i18n]"), function (node) {
+      node.textContent = t(node.getAttribute("data-i18n"));
+    });
+    Array.prototype.forEach.call(
+      document.querySelectorAll("[data-i18n-placeholder]"),
+      function (node) {
+        node.setAttribute("placeholder", t(node.getAttribute("data-i18n-placeholder")));
+      }
+    );
+    Array.prototype.forEach.call(document.querySelectorAll("[data-i18n-aria]"), function (node) {
+      node.setAttribute("aria-label", t(node.getAttribute("data-i18n-aria")));
+    });
+    var conn = byId("conn");
+    if (conn) {
+      conn.setAttribute("title", t("conn.aria"));
+    }
+  }
 
   var filesState = {
     state: "all",
@@ -22,6 +239,8 @@
   var statusTimer = null;
   var searchTimer = null;
   var currentTab = "dashboard";
+  var lastStatus = null;
+  var lastConfig = null;
 
   // ---- tiny helpers ----------------------------------------------------
 
@@ -86,12 +305,12 @@
     var m = Math.floor((s % 3600) / 60);
     var sec = s % 60;
     if (h > 0) {
-      return h + "h " + m + "m " + sec + "s";
+      return h + t("uptime.h") + " " + m + t("uptime.m") + " " + sec + t("uptime.s");
     }
     if (m > 0) {
-      return m + "m " + sec + "s";
+      return m + t("uptime.m") + " " + sec + t("uptime.s");
     }
-    return sec + "s";
+    return sec + t("uptime.s");
   }
 
   function formatTime(iso) {
@@ -115,7 +334,7 @@
 
     var close = el("button", "toast-close", "\u00d7");
     close.type = "button";
-    close.setAttribute("aria-label", "Dismiss");
+    close.setAttribute("aria-label", t("toast.dismiss"));
     close.addEventListener("click", function () {
       item.remove();
     });
@@ -170,13 +389,13 @@
 
   // ---- connection indicator -------------------------------------------
 
-  function setConn(state) {
+  function renderConn() {
     var map = {
-      ok: { text: "Connected", className: "ok" },
-      degraded: { text: "Degraded", className: "degraded" },
-      down: { text: "Unreachable", className: "down" },
+      ok: { text: t("conn.ok"), className: "ok" },
+      degraded: { text: t("conn.degraded"), className: "degraded" },
+      down: { text: t("conn.down"), className: "down" },
     };
-    var info = map[state] || map.down;
+    var info = map[connState] || map.down;
     var dot = byId("conn-dot");
     var text = byId("conn-text");
     if (dot) {
@@ -185,10 +404,14 @@
     if (text) {
       text.textContent = info.text;
     }
+  }
+
+  function setConn(state) {
     if (state === "down" && connState !== "down") {
-      toast("Cannot reach the cloud-sync backend.", "error");
+      toast(t("conn.downToast"), "error");
     }
     connState = state;
+    renderConn();
   }
 
   // ---- status / dashboard ---------------------------------------------
@@ -197,6 +420,7 @@
     if (!st) {
       return;
     }
+    lastStatus = st;
     var counts = st.counts || {};
     setText("count-synced", counts.synced != null ? counts.synced : 0);
     setText("count-failed", counts.failed != null ? counts.failed : 0);
@@ -207,7 +431,7 @@
     if (st.ok) {
       hide(banner);
     } else {
-      setText("degraded-error", st.error || "supervisor not running");
+      setText("degraded-error", st.error || t("status.supervisorDown"));
       show(banner);
     }
 
@@ -222,19 +446,14 @@
 
     var cfg = st.config || {};
     setText("ui-listen", cfg.ui_listen || "\u2013");
-    setText(
-      "cleanup-mode",
-      cfg.cleanup_dry_run
-        ? "Cleanup is in dry-run mode (no files will be deleted)."
-        : "Cleanup is live (files may be deleted)."
-    );
+    setText("cleanup-mode", cfg.cleanup_dry_run ? t("maint.dryRun") : t("maint.live"));
 
     var dirs = byId("watch-dirs");
     if (dirs) {
       dirs.textContent = "";
       var list = st.watch_dirs || [];
       if (!list.length) {
-        dirs.appendChild(el("li", "muted", "No watch directories configured."));
+        dirs.appendChild(el("li", "muted", t("watch.none")));
       } else {
         list.forEach(function (dir) {
           dirs.appendChild(el("li", "dir", dir));
@@ -246,11 +465,11 @@
   }
 
   var CONFIG_LABELS = {
-    openlist_url: "OpenList URL",
-    openlist_overwrite: "Overwrite existing",
-    cleanup_dry_run: "Cleanup dry-run",
-    upload_concurrency: "Upload concurrency",
-    ui_listen: "UI listen",
+    openlist_url: "cfg.openlist_url",
+    openlist_overwrite: "cfg.openlist_overwrite",
+    cleanup_dry_run: "cfg.cleanup_dry_run",
+    upload_concurrency: "cfg.upload_concurrency",
+    ui_listen: "cfg.ui_listen",
   };
 
   function renderEffectiveConfig(cfg) {
@@ -258,9 +477,10 @@
     if (!dl) {
       return;
     }
+    lastConfig = cfg;
     dl.textContent = "";
     if (!cfg) {
-      dl.appendChild(el("dd", "muted", "No effective config available."));
+      dl.appendChild(el("dd", "muted", t("config.none")));
       return;
     }
     Object.keys(CONFIG_LABELS).forEach(function (key) {
@@ -269,11 +489,11 @@
       }
       var value = cfg[key];
       if (typeof value === "boolean") {
-        value = value ? "on" : "off";
+        value = value ? t("bool.on") : t("bool.off");
       } else if (value === "" || value === null || value === undefined) {
         value = "\u2013";
       }
-      dl.appendChild(el("dt", null, CONFIG_LABELS[key]));
+      dl.appendChild(el("dt", null, t(CONFIG_LABELS[key])));
       dl.appendChild(el("dd", null, value));
     });
   }
@@ -320,10 +540,10 @@
     try {
       var data = await postJSON("/api/cleanup/run", {});
       var n = data && data.processed != null ? data.processed : 0;
-      toast("Cleanup processed " + n + " item(s).", "success");
+      toast(t("maint.done", { n: n }), "success");
       await loadStatus();
     } catch (e) {
-      toast("Cleanup failed: " + e.message, "error");
+      toast(t("maint.failed", { e: e.message }), "error");
     } finally {
       if (btn) {
         btn.disabled = false;
@@ -333,9 +553,18 @@
 
   // ---- files -----------------------------------------------------------
 
+  function stateLabel(state) {
+    var key = "state." + (state || "unknown");
+    var known = ["synced", "failed", "cleaned", "unsynced", "all"];
+    if (known.indexOf(state) === -1) {
+      key = "state.unknown";
+    }
+    return t(key);
+  }
+
   function stateBadge(state) {
     var label = state || "unknown";
-    return el("span", "badge state-" + label, label);
+    return el("span", "badge state-" + label, stateLabel(state));
   }
 
   function fileRow(item) {
@@ -345,7 +574,7 @@
     var check = el("input", null);
     check.type = "checkbox";
     check.checked = selected.has(item.key);
-    check.setAttribute("aria-label", "Select " + item.key);
+    check.setAttribute("aria-label", t("files.select", { key: item.key }));
     check.addEventListener("change", function () {
       if (check.checked) {
         selected.add(item.key);
@@ -387,7 +616,7 @@
     tr.appendChild(errCell);
 
     var actionCell = el("td", "col-action");
-    var retry = el("button", "btn small", "Retry");
+    var retry = el("button", "btn small", t("files.retry"));
     retry.type = "button";
     retry.addEventListener("click", function () {
       retryKeys([item.key]);
@@ -408,7 +637,7 @@
 
     if (!items.length) {
       var emptyRow = el("tr");
-      var emptyCell = el("td", "empty", "No files match this filter.");
+      var emptyCell = el("td", "empty", t("files.empty"));
       emptyCell.colSpan = 9;
       emptyRow.appendChild(emptyCell);
       body.appendChild(emptyRow);
@@ -419,8 +648,8 @@
     }
 
     var totalPages = Math.max(1, Math.ceil(filesState.total / filesState.pageSize));
-    setText("page-info", "Page " + filesState.page + " of " + totalPages);
-    setText("total-info", filesState.total + " file(s)");
+    setText("page-info", t("files.page", { page: filesState.page, total: totalPages }));
+    setText("total-info", t("files.count", { n: filesState.total }));
 
     var prev = byId("prev-page");
     var next = byId("next-page");
@@ -476,7 +705,7 @@
       pruneSelection();
       renderFiles();
     } catch (e) {
-      toast("Failed to load files: " + e.message, "error");
+      toast(t("files.loadFailed", { e: e.message }), "error");
       filesState.items = [];
       filesState.total = 0;
       renderFiles();
@@ -508,22 +737,25 @@
       var data = await postJSON("/api/retry", { keys: keys });
       var results = data && data.results ? data.results : [];
       if (!results.length) {
-        toast("No matching files to retry.", "info");
+        toast(t("files.retryNone"), "info");
       }
       var okCount = 0;
       var failCount = 0;
       results.forEach(function (r) {
         if (r.ok) {
           okCount++;
-          toast("Retry queued: " + r.key, "success");
+          toast(t("files.retryQueued", { key: r.key }), "success");
         } else {
           failCount++;
-          toast("Retry failed: " + r.key + " \u2014 " + (r.error || "unknown"), "error");
+          toast(
+            t("files.retryFailed", { key: r.key, err: r.error || t("state.unknown") }),
+            "error"
+          );
         }
       });
       if (results.length) {
         toast(
-          "Retry: " + okCount + " queued, " + failCount + " failed.",
+          t("files.retrySummary", { ok: okCount, fail: failCount }),
           failCount ? "error" : "success"
         );
       }
@@ -531,7 +763,7 @@
       await loadFiles();
       loadStatus();
     } catch (e) {
-      toast("Retry failed: " + e.message, "error");
+      toast(t("files.retryRequestFailed", { e: e.message }), "error");
     } finally {
       updateRetrySelected();
     }
@@ -568,8 +800,8 @@
       }
       hideConfigError();
     } catch (e) {
-      showConfigError("Failed to load config: " + e.message);
-      toast("Failed to load config: " + e.message, "error");
+      showConfigError(t("config.loadFailed", { e: e.message }));
+      toast(t("config.loadFailed", { e: e.message }), "error");
     }
   }
 
@@ -577,8 +809,8 @@
     var area = byId("config-yaml");
     var yaml = area ? area.value : "";
     if (!yaml.trim()) {
-      showConfigError("Config is empty; refusing to save.");
-      toast("Config is empty; not saved.", "error");
+      showConfigError(t("config.empty"));
+      toast(t("config.emptyToast"), "error");
       return;
     }
     var btn = byId("config-save");
@@ -592,7 +824,7 @@
         body: JSON.stringify({ yaml: yaml }),
       });
       hideConfigError();
-      toast("Config saved and reloaded.", "success");
+      toast(t("config.saved"), "success");
       if (data && data.status) {
         renderStatus(data.status);
       }
@@ -600,7 +832,7 @@
       await loadConfig();
     } catch (e) {
       showConfigError(e.message);
-      toast("Save failed: " + e.message, "error");
+      toast(t("config.saveFailed", { e: e.message }), "error");
     } finally {
       if (btn) {
         btn.disabled = false;
@@ -628,12 +860,41 @@
     }
   }
 
+  // ---- language switching ---------------------------------------------
+
+  function setLang(next) {
+    lang = next === "zh" ? "zh" : "en";
+    try {
+      localStorage.setItem(LANG_KEY, lang);
+    } catch (e) {
+      /* ignore */
+    }
+    document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+    Array.prototype.forEach.call(document.querySelectorAll(".lang-btn"), function (b) {
+      b.classList.toggle("active", b.getAttribute("data-lang") === lang);
+    });
+    applyStaticI18n();
+    // re-render dynamic content in the new language
+    if (lastStatus) {
+      renderStatus(lastStatus);
+    }
+    renderFiles();
+    renderEffectiveConfig(lastConfig);
+    renderConn();
+  }
+
   // ---- wire up ---------------------------------------------------------
 
   function bindEvents() {
     Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (tab) {
       tab.addEventListener("click", function () {
         showTab(tab.getAttribute("data-tab"));
+      });
+    });
+
+    Array.prototype.forEach.call(document.querySelectorAll(".lang-btn"), function (btn) {
+      btn.addEventListener("click", function () {
+        setLang(btn.getAttribute("data-lang"));
       });
     });
 
@@ -732,6 +993,12 @@
   }
 
   function init() {
+    lang = detectLang();
+    document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+    Array.prototype.forEach.call(document.querySelectorAll(".lang-btn"), function (b) {
+      b.classList.toggle("active", b.getAttribute("data-lang") === lang);
+    });
+    applyStaticI18n();
     bindEvents();
     showTab("dashboard");
     loadStatus();

@@ -10,71 +10,77 @@
     <header class="topbar">
       <div class="brand">
         <span class="brand-name">cloud-sync</span>
-        <span class="brand-sub">control panel</span>
+        <span class="brand-sub" data-i18n="brand.sub">control panel</span>
       </div>
-      <div class="conn" id="conn" title="Backend connection status">
-        <span class="conn-dot" id="conn-dot"></span>
-        <span class="conn-text" id="conn-text">Connecting&hellip;</span>
+      <div class="topbar-right">
+        <div class="conn" id="conn" data-i18n-aria="conn.aria" title="Backend connection status">
+          <span class="conn-dot" id="conn-dot"></span>
+          <span class="conn-text" id="conn-text" data-i18n="conn.connecting">Connecting&hellip;</span>
+        </div>
+        <div class="lang" id="lang-toggle" role="group" aria-label="Language">
+          <button class="lang-btn" type="button" data-lang="en">EN</button>
+          <button class="lang-btn" type="button" data-lang="zh">中文</button>
+        </div>
       </div>
     </header>
 
-    <nav class="tabs" id="tabs" aria-label="Sections">
-      <button class="tab active" type="button" data-tab="dashboard">Dashboard</button>
-      <button class="tab" type="button" data-tab="files">Files</button>
-      <button class="tab" type="button" data-tab="config">Config</button>
+    <nav class="tabs" id="tabs" data-i18n-aria="tabs.aria" aria-label="Sections">
+      <button class="tab active" type="button" data-tab="dashboard" data-i18n="tab.dashboard">Dashboard</button>
+      <button class="tab" type="button" data-tab="files" data-i18n="tab.files">Files</button>
+      <button class="tab" type="button" data-tab="config" data-i18n="tab.config">Config</button>
     </nav>
 
     <main>
       <!-- Dashboard -->
       <section class="panel active" id="panel-dashboard">
         <div class="banner hidden" id="degraded-banner">
-          <strong>Degraded:</strong>
+          <strong data-i18n="dash.degraded">Degraded:</strong>
           <span id="degraded-error"></span>
         </div>
 
         <div class="cards">
           <div class="card stat" data-state="synced">
             <div class="stat-value" id="count-synced">&ndash;</div>
-            <div class="stat-label">Synced</div>
+            <div class="stat-label" data-i18n="state.synced">Synced</div>
           </div>
           <div class="card stat" data-state="failed">
             <div class="stat-value" id="count-failed">&ndash;</div>
-            <div class="stat-label">Failed</div>
+            <div class="stat-label" data-i18n="state.failed">Failed</div>
           </div>
           <div class="card stat" data-state="cleaned">
             <div class="stat-value" id="count-cleaned">&ndash;</div>
-            <div class="stat-label">Cleaned</div>
+            <div class="stat-label" data-i18n="state.cleaned">Cleaned</div>
           </div>
           <div class="card stat" data-state="unsynced">
             <div class="stat-value" id="count-unsynced">&ndash;</div>
-            <div class="stat-label">Unsynced</div>
+            <div class="stat-label" data-i18n="state.unsynced">Unsynced</div>
           </div>
         </div>
 
         <div class="grid">
           <div class="card">
-            <h2>Health</h2>
+            <h2 data-i18n="health.title">Health</h2>
             <dl class="kv">
-              <dt>OpenList</dt>
-              <dd><span class="badge" id="openlist-badge">Unknown</span></dd>
-              <dt>Uptime</dt>
+              <dt data-i18n="health.openlist">OpenList</dt>
+              <dd><span class="badge" id="openlist-badge" data-i18n="health.badge.unknown">Unknown</span></dd>
+              <dt data-i18n="health.uptime">Uptime</dt>
               <dd id="uptime">&ndash;</dd>
-              <dt>Started</dt>
+              <dt data-i18n="health.started">Started</dt>
               <dd id="started-at">&ndash;</dd>
-              <dt>UI listen</dt>
+              <dt data-i18n="health.uilisten">UI listen</dt>
               <dd id="ui-listen">&ndash;</dd>
             </dl>
           </div>
 
           <div class="card">
-            <h2>Watch directories</h2>
+            <h2 data-i18n="watch.title">Watch directories</h2>
             <ul class="dirs" id="watch-dirs"></ul>
           </div>
 
           <div class="card">
-            <h2>Maintenance</h2>
-            <p class="muted" id="cleanup-mode">Cleanup mode unknown.</p>
-            <button class="btn primary" type="button" id="cleanup-btn">Run cleanup now</button>
+            <h2 data-i18n="maint.title">Maintenance</h2>
+            <p class="muted" id="cleanup-mode" data-i18n="maint.modeUnknown">Cleanup mode unknown.</p>
+            <button class="btn primary" type="button" id="cleanup-btn" data-i18n="maint.run">Run cleanup now</button>
           </div>
         </div>
       </section>
@@ -83,20 +89,21 @@
       <section class="panel" id="panel-files">
         <div class="toolbar">
           <div class="state-tabs" id="state-tabs">
-            <button class="chip active" type="button" data-state="all">All</button>
-            <button class="chip" type="button" data-state="synced">Synced</button>
-            <button class="chip" type="button" data-state="failed">Failed</button>
-            <button class="chip" type="button" data-state="cleaned">Cleaned</button>
-            <button class="chip" type="button" data-state="unsynced">Unsynced</button>
+            <button class="chip active" type="button" data-state="all" data-i18n="state.all">All</button>
+            <button class="chip" type="button" data-state="synced" data-i18n="state.synced">Synced</button>
+            <button class="chip" type="button" data-state="failed" data-i18n="state.failed">Failed</button>
+            <button class="chip" type="button" data-state="cleaned" data-i18n="state.cleaned">Cleaned</button>
+            <button class="chip" type="button" data-state="unsynced" data-i18n="state.unsynced">Unsynced</button>
           </div>
           <input
             id="search"
             class="search"
             type="search"
+            data-i18n-placeholder="files.search"
             placeholder="Search path&hellip;"
             autocomplete="off"
           />
-          <button class="btn" type="button" id="retry-selected" disabled>
+          <button class="btn" type="button" id="retry-selected" disabled data-i18n="files.retrySelected">
             Retry selected
           </button>
         </div>
@@ -106,15 +113,15 @@
             <thead>
               <tr>
                 <th class="col-check">
-                  <input type="checkbox" id="check-all" aria-label="Select all rows" />
+                  <input type="checkbox" id="check-all" data-i18n-aria="files.selectAll" aria-label="Select all rows" />
                 </th>
-                <th>Path</th>
-                <th>Size</th>
-                <th>State</th>
-                <th>Cloud path</th>
-                <th>Synced at</th>
-                <th>Cleanup at</th>
-                <th>Error</th>
+                <th data-i18n="th.path">Path</th>
+                <th data-i18n="th.size">Size</th>
+                <th data-i18n="th.state">State</th>
+                <th data-i18n="th.cloud">Cloud path</th>
+                <th data-i18n="th.syncedAt">Synced at</th>
+                <th data-i18n="th.cleanupAt">Cleanup at</th>
+                <th data-i18n="th.error">Error</th>
                 <th class="col-action"></th>
               </tr>
             </thead>
@@ -123,9 +130,9 @@
         </div>
 
         <div class="pager">
-          <button class="btn" type="button" id="prev-page" disabled>Prev</button>
+          <button class="btn" type="button" id="prev-page" disabled data-i18n="pager.prev">Prev</button>
           <span id="page-info">Page &ndash;</span>
-          <button class="btn" type="button" id="next-page" disabled>Next</button>
+          <button class="btn" type="button" id="next-page" disabled data-i18n="pager.next">Next</button>
           <span class="muted" id="total-info"></span>
         </div>
       </section>
@@ -135,12 +142,12 @@
         <div class="config-grid">
           <div class="card">
             <div class="row-between">
-              <h2>Configuration (YAML)</h2>
+              <h2 data-i18n="config.title">Configuration (YAML)</h2>
               <div class="actions">
-                <button class="btn" type="button" id="config-reload">
+                <button class="btn" type="button" id="config-reload" data-i18n="config.reload">
                   Reload from server
                 </button>
-                <button class="btn primary" type="button" id="config-save">
+                <button class="btn primary" type="button" id="config-save" data-i18n="config.save">
                   Save &amp; Reload
                 </button>
               </div>
@@ -150,9 +157,9 @@
           </div>
 
           <div class="card">
-            <h2>Effective config</h2>
+            <h2 data-i18n="config.effective">Effective config</h2>
             <dl class="effective" id="effective-config">
-              <dd class="muted">Loading&hellip;</dd>
+              <dd class="muted" data-i18n="config.loading">Loading&hellip;</dd>
             </dl>
           </div>
         </div>

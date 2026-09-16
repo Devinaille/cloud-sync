@@ -230,6 +230,8 @@ docker compose logs -f cloud-sync
 
 三个 Tab：**Dashboard**（计数 / OpenList 连通性 / uptime / watch 目录 / 手动 cleanup）、**Files**（筛选 / 搜索 / 分页 / 勾选重试）、**Config**（编辑 YAML + Save & Reload）。
 
+支持中英文切换（右上角 `EN / 中文`），默认跟随浏览器语言，选择存于 `localStorage`。
+
 JSON API：
 
 | Method + Path | 用途 |
