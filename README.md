@@ -235,3 +235,26 @@ http://<host>:8099/
 - `docker build`（`golang:1.22-alpine` → `distroless/static-debian12:nonroot`） + size 断言 `< 30 MiB`
 
 详见 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)。
+
+## 发布（rc / release）
+
+打 tag 触发打包与发布（两个独立 workflow）。发布物：
+
+- **GitHub Release**：`cloud-sync_<tag>_linux_amd64.tar.gz`（含二进制 + README）+ `SHA256SUMS`。
+- **容器镜像**：`ghcr.io/devinaille/cloud-sync:<tag>`（正式版额外打 `:latest`）。
+
+| 类型 | tag 形式 | workflow | 说明 |
+|---|---|---|---|
+| 候选版 | `v1.0.0-rc1`（含 `-rc`） | [`rc.yml`](./.github/workflows/rc.yml) | 创建 **pre-release**；镜像只打 `<tag>`，不动 `latest` |
+| 正式版 | `v1.0.0` | [`release.yml`](./.github/workflows/release.yml) | 创建正式 Release；镜像打 `<tag>` 和 `latest` |
+
+发版步骤：
+
+```bash
+git tag v1.0.0-rc1 && git push origin v1.0.0-rc1   # 候选版
+git tag v1.0.0     && git push origin v1.0.0       # 正式版
+```
+
+两个 workflow 都支持在 Actions 页面 **Run workflow**（`workflow_dispatch`），填入已存在的 tag 可重跑打包。先跑测试（gofmt/vet/test）再打包，失败即中止。
+
+> ghcr 包默认 private，首次发布后到 GitHub Packages 设置里改为 public 才能匿名拉取。
