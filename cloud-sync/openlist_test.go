@@ -434,3 +434,50 @@ func TestClient_TaskDone_NonZeroCode(t *testing.T) {
 		t.Errorf("err = %v, want code=500", err)
 	}
 }
+
+func TestClient_Exists_Found(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/fs/get" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 200, "data": map[string]any{"name": "X.mkv"}})
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv)
+	ok, err := c.Exists(context.Background(), "/139yun_media/media/Movies/X.mkv")
+	if err != nil {
+		t.Fatalf("Exists: %v", err)
+	}
+	if !ok {
+		t.Error("Exists = false, want true")
+	}
+}
+
+func TestClient_Exists_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// OpenList reports a missing object as HTTP 200 with code != 200.
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 500, "message": "object not found"})
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv)
+	ok, err := c.Exists(context.Background(), "/139yun_media/media/Movies/X.mkv")
+	if err != nil {
+		t.Fatalf("Exists: %v", err)
+	}
+	if ok {
+		t.Error("Exists = true, want false")
+	}
+}
+
+func TestClient_Exists_HTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("unauthorized"))
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv)
+	ok, err := c.Exists(context.Background(), "/x")
+	if err == nil || ok {
+		t.Errorf("Exists = (%v,%v), want (false, error)", ok, err)
+	}
+}

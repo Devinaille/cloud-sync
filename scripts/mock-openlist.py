@@ -5,6 +5,8 @@ Local OpenList mock for cloud-sync smoke tests.
 Implements the endpoints cloud-sync actually uses against real OpenList v4:
 
   POST /api/fs/list                                  — Ping: empty directory listing.
+  POST /api/fs/get                                   — object lookup (pre-check existence);
+                                                       code=200 if present else code!=200.
   POST /api/fs/copy                                  — copy via names[] + skip_existing/overwrite;
                                                        returns data.tasks[] (TaskInfo array).
   POST /api/admin/task/copy/info?tid=<id>           — task status lookup by numeric `state`.
@@ -84,6 +86,15 @@ def _resolve(storage: str, name: str) -> str:
     raise ValueError(f"unknown storage root: {storage!r}")
 
 
+def _resolve_path(p: str) -> str:
+    """Map a full OpenList path (mount + subpath) to a local path."""
+    for mount, local in ((SRC_MOUNT, SRC_LOCAL), (DST_MOUNT, DST_LOCAL)):
+        if p == mount or p.startswith(mount + "/"):
+            name = "" if p == mount else p[len(mount) + 1:]
+            return _resolve(mount, name)
+    raise ValueError(f"unknown path: {p!r}")
+
+
 def _now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
@@ -154,6 +165,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/api/fs/list":
             return self._send(200, {"code": 200, "message": "ok", "data": {"content": []}})
+
+        if self.path == "/api/fs/get":
+            req = self._read_json()
+            _log_request(f"{_now_iso()} POST /api/fs/get {json.dumps(req, sort_keys=True, separators=(',', ':'))}")
+            try:
+                full = _resolve_path(req.get("path", ""))
+            except ValueError as e:
+                return self._send(200, {"code": 400, "message": str(e)})
+            if os.path.exists(full):
+                return self._send(
+                    200,
+                    {"code": 200, "message": "success",
+                     "data": {"name": os.path.basename(full), "is_dir": os.path.isdir(full),
+                              "size": 0 if os.path.isdir(full) else os.path.getsize(full)}},
+                )
+            # OpenList reports a missing object as HTTP 200 with code != 200.
+            return self._send(200, {"code": 500, "message": "object not found"})
 
         if self.path == "/api/fs/copy":
             req = self._read_json()

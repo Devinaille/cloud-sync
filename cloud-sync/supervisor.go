@@ -394,6 +394,33 @@ func (s *Supervisor) Ping(ctx context.Context) error {
 	return nil
 }
 
+// CloudExists reports whether a path exists on OpenList, using the current
+// generation's uploader or a throwaway one built from the config when paused.
+// It returns an error if the uploader does not support existence checks.
+func (s *Supervisor) CloudExists(ctx context.Context, path string) (bool, error) {
+	s.mu.RLock()
+	g := s.gen
+	cfg := s.cfg
+	log := s.log
+	s.mu.RUnlock()
+
+	var up Uploader
+	if g != nil {
+		up = g.uploader
+	} else if cfg != nil {
+		up = s.deps.NewUploader(cfg, log)
+	}
+	if up == nil {
+		return false, errors.New("supervisor: not initialized")
+	}
+	if e, ok := up.(interface {
+		Exists(context.Context, string) (bool, error)
+	}); ok {
+		return e.Exists(ctx, path)
+	}
+	return false, errors.New("uploader does not support cloud existence checks")
+}
+
 // Cleanup returns the current generation's Cleanup, or nil when no generation
 // is running. The web UI uses it to trigger an on-demand cleanup tick.
 func (s *Supervisor) Cleanup() *Cleanup {

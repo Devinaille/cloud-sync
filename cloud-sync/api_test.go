@@ -489,6 +489,13 @@ func TestAPI_Precheck_WhilePaused(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(env.syncDir, precheckFileName)); err != nil {
 		t.Errorf("precheck report not persisted: %v", err)
 	}
+	// The mock reports nothing on the cloud, so the candidate is "missing".
+	if rep.Candidates[0].Cloud != "missing" {
+		t.Errorf("cloud = %q, want missing", rep.Candidates[0].Cloud)
+	}
+	if !rep.CloudChecked || rep.CloudMissing != 1 {
+		t.Errorf("cloud totals: checked=%v missing=%d, want true/1", rep.CloudChecked, rep.CloudMissing)
+	}
 
 	// GET returns the persisted report.
 	var got precheckReport
@@ -505,5 +512,35 @@ func TestAPI_Precheck_GetWithoutReport(t *testing.T) {
 	srv := env.server(t)
 	if code := getJSON(t, srv.URL+"/api/precheck", nil); code != http.StatusNotFound {
 		t.Errorf("precheck GET without report = %d, want 404", code)
+	}
+}
+
+func TestAPI_Precheck_CloudExists(t *testing.T) {
+	env := newTestSupervisor(t)
+	srv := env.server(t)
+	doJSON(t, http.MethodPost, srv.URL+"/api/tasks", map[string]bool{"enabled": false}, nil)
+
+	if err := os.MkdirAll(filepath.Join(env.watch, "Movies"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(env.watch, "Movies", "A.mkv"), make([]byte, 2048), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Pretend the file already exists on the cloud.
+	env.up.cloudExists = map[string]bool{"/139yun_media/media/Movies/A.mkv": true}
+
+	var rep precheckReport
+	if code := doJSON(t, http.MethodPost, srv.URL+"/api/precheck", map[string]any{}, &rep); code != http.StatusOK {
+		t.Fatalf("precheck POST = %d, want 200", code)
+	}
+	if rep.CandidatesTotal != 1 {
+		t.Fatalf("candidates_total = %d, want 1", rep.CandidatesTotal)
+	}
+	if rep.Candidates[0].Cloud != "exists" {
+		t.Errorf("cloud = %q, want exists", rep.Candidates[0].Cloud)
+	}
+	if !rep.CloudChecked || rep.CloudExists != 1 || rep.CloudMissing != 0 {
+		t.Errorf("cloud totals: checked=%v exists=%d missing=%d, want true/1/0",
+			rep.CloudChecked, rep.CloudExists, rep.CloudMissing)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -98,10 +99,13 @@ type precheckItem struct {
 	Key     string `json:"key"`
 	SrcPath string `json:"src_path"`
 	Size    int64  `json:"size"`
+	// Cloud is the OpenList-side existence check: "exists" | "missing" | "unknown".
+	Cloud string `json:"cloud"`
 }
 
 // precheckReport is a read-only dry run: which files would be uploaded if tasks
-// were started. It is persisted to <SyncStatusDir>/precheck.json.
+// were started, and whether each candidate already exists on the cloud. It is
+// persisted to <SyncStatusDir>/precheck.json.
 type precheckReport struct {
 	GeneratedAt     string         `json:"generated_at"`
 	WatchDirs       []string       `json:"watch_dirs"`
@@ -113,6 +117,13 @@ type precheckReport struct {
 	Candidates      []precheckItem `json:"candidates"`
 	CandidatesTotal int            `json:"candidates_total"`
 	CandidatesBytes int64          `json:"candidates_bytes"`
+	// CloudChecked is false when the OpenList existence probe failed (see
+	// CloudError); per-candidate Cloud is then "unknown".
+	CloudChecked bool   `json:"cloud_checked"`
+	CloudError   string `json:"cloud_error,omitempty"`
+	CloudExists  int    `json:"cloud_exists"`
+	CloudMissing int    `json:"cloud_missing"`
+	CloudUnknown int    `json:"cloud_unknown"`
 }
 
 const precheckFileName = "precheck.json"
@@ -414,7 +425,7 @@ func (w *WebServer) handlePrecheck(rw http.ResponseWriter, r *http.Request) {
 		rw.WriteHeader(http.StatusOK)
 		_, _ = rw.Write(data)
 	case http.MethodPost:
-		rep, err := runPrecheck(cfg, st)
+		rep, err := runPrecheck(r.Context(), cfg, st, w.sup.CloudExists)
 		if err != nil {
 			writeError(rw, http.StatusInternalServerError, err.Error())
 			return
@@ -595,8 +606,12 @@ func unsyncedFiles(cfg *Config, st *StateManager) ([]*StatusRecord, error) {
 }
 
 // runPrecheck walks the watch dirs and reports which files would be uploaded if
-// tasks were running. It never touches sync status records.
-func runPrecheck(cfg *Config, st *StateManager) (*precheckReport, error) {
+// tasks were running, then probes OpenList to see whether each candidate already
+// exists on the cloud. It never touches sync status records.
+//
+// cloudExists reports cloud-side existence; a transport error marks the
+// candidate "unknown" (and CloudChecked=false) rather than failing the report.
+func runPrecheck(ctx context.Context, cfg *Config, st *StateManager, cloudExists func(context.Context, string) (bool, error)) (*precheckReport, error) {
 	rep := &precheckReport{
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		WatchDirs:   cfg.WatchDirs,
@@ -640,11 +655,45 @@ func runPrecheck(cfg *Config, st *StateManager) (*precheckReport, error) {
 		}
 	}
 	sort.Slice(rep.Candidates, func(i, j int) bool { return rep.Candidates[i].Key < rep.Candidates[j].Key })
+
 	rep.CandidatesTotal = len(rep.Candidates)
-	for _, c := range rep.Candidates {
+	rep.CloudChecked = cloudExists != nil
+	for i := range rep.Candidates {
+		c := &rep.Candidates[i]
 		rep.CandidatesBytes += c.Size
+		if cloudExists == nil {
+			c.Cloud = "unknown"
+			rep.CloudUnknown++
+			continue
+		}
+		exists, err := cloudExists(ctx, cloudPathFor(cfg, c.Key))
+		switch {
+		case err != nil:
+			c.Cloud = "unknown"
+			rep.CloudUnknown++
+			rep.CloudChecked = false
+			if rep.CloudError == "" {
+				rep.CloudError = err.Error()
+			}
+		case exists:
+			c.Cloud = "exists"
+			rep.CloudExists++
+		default:
+			c.Cloud = "missing"
+			rep.CloudMissing++
+		}
 	}
 	return rep, nil
+}
+
+// cloudPathFor maps a watch-relative key to its OpenList path, mirroring the
+// pipeline's layout: <DstStorage>/media/<rel>.
+func cloudPathFor(cfg *Config, key string) string {
+	p := cfg.DstStorage + "/media"
+	if parent := path.Dir(key); parent != "." && parent != "" {
+		p += "/" + parent
+	}
+	return p + "/" + path.Base(key)
 }
 
 // writePrecheck persists a report atomically under the status dir. The file

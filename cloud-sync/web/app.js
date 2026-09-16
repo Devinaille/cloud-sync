@@ -61,9 +61,12 @@
       "precheck.run": "Run pre-check",
       "precheck.running": "Scanning\u2026",
       "precheck.none": "No pre-check yet.",
-      "precheck.summary": "{n} file(s) to upload, {size} total.",
+      "precheck.summary": "{n} to upload ({exists} already on cloud, {missing} missing), {size} total.",
       "precheck.clean": "Nothing to upload.",
       "precheck.failed": "Pre-check failed: {e}",
+      "precheck.cloud.exists": "on cloud",
+      "precheck.cloud.missing": "not on cloud",
+      "precheck.cloud.unknown": "cloud unknown",
       "files.search": "Search path\u2026",
       "files.retrySelected": "Retry selected",
       "files.retry": "Retry",
@@ -159,9 +162,12 @@
       "precheck.run": "运行预检查",
       "precheck.running": "扫描中\u2026",
       "precheck.none": "尚未预检查。",
-      "precheck.summary": "待上传 {n} 个文件，共 {size}。",
+      "precheck.summary": "待上传 {n} 个（云盘已有 {exists}，缺失 {missing}），共 {size}。",
       "precheck.clean": "没有需要上传的文件。",
       "precheck.failed": "预检查失败：{e}",
+      "precheck.cloud.exists": "云盘已有",
+      "precheck.cloud.missing": "云盘缺失",
+      "precheck.cloud.unknown": "云盘未知",
       "files.search": "搜索路径\u2026",
       "files.retrySelected": "重试选中",
       "files.retry": "重试",
@@ -650,12 +656,20 @@
     var n = rep.candidates_total || 0;
     if (sum) {
       sum.textContent = n
-        ? t("precheck.summary", { n: n, size: formatBytes(rep.candidates_bytes || 0) })
+        ? t("precheck.summary", {
+            n: n,
+            exists: rep.cloud_exists || 0,
+            missing: rep.cloud_missing || 0,
+            size: formatBytes(rep.candidates_bytes || 0),
+          })
         : t("precheck.clean");
     }
     if (list) {
       (rep.candidates || []).slice(0, 10).forEach(function (c) {
-        list.appendChild(el("li", "dir", c.key + "  (" + formatBytes(c.size) + ")"));
+        var cloud = "precheck.cloud." + (c.cloud || "unknown");
+        list.appendChild(
+          el("li", "dir", c.key + "  (" + formatBytes(c.size) + ")  \u2013 " + t(cloud))
+        );
       });
     }
   }

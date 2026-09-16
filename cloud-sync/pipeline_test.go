@@ -17,6 +17,15 @@ type mockUploader struct {
 	mu           sync.Mutex
 	copyCalls    []copyCall
 	taskStatuses map[string]TaskStatus
+	// cloudExists backs Exists (pre-check); nil means "nothing exists".
+	cloudExists map[string]bool
+}
+
+// Exists reports cloud-side existence for the pre-check.
+func (m *mockUploader) Exists(ctx context.Context, path string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.cloudExists[path], nil
 }
 
 type copyCall struct {

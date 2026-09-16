@@ -113,6 +113,19 @@ echo "$UI_RETRY" | grep -q '"results"' \
     || { echo "FAIL: /api/retry missing results: $UI_RETRY"; exit 1; }
 echo "$UI_RETRY" | grep -q '"ok":true' \
     || { echo "FAIL: /api/retry rejected the key: $UI_RETRY"; exit 1; }
+
+echo "--- web ui: POST /api/precheck (cloud existence) ---"
+# Retry just deleted the record, so the file is a candidate again; the mock cloud
+# still holds the copy, so it must be reported as present on the cloud.
+UI_PRECHECK=$(curl -s -X POST -H 'Content-Type: application/json' -d '{}' \
+    http://127.0.0.1:18099/api/precheck)
+echo "$UI_PRECHECK" | grep -q '"cloud_checked":true' \
+    || { echo "FAIL: /api/precheck missing cloud_checked: $UI_PRECHECK"; exit 1; }
+echo "$UI_PRECHECK" | grep -q '"key":"Movies/SmokeTest.mkv"' \
+    || { echo "FAIL: precheck did not list the candidate: $UI_PRECHECK"; exit 1; }
+echo "$UI_PRECHECK" | grep -q '"cloud":"exists"' \
+    || { echo "FAIL: precheck did not detect the cloud copy: $UI_PRECHECK"; exit 1; }
+
 # Retry deleted the record and re-enqueued the file; wait for it to be re-synced
 # so the cleanup section below still has a record to rewrite.
 UI_STATE=""

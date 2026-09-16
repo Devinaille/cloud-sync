@@ -176,3 +176,38 @@ func (c *Client) TaskDone(ctx context.Context, taskID string) (TaskStatus, error
 		return TaskPending, nil
 	}
 }
+
+// Exists reports whether path exists on OpenList (POST /api/fs/get).
+//
+//   - HTTP 2xx with code==200            → (true, nil)
+//   - HTTP 2xx with code!=200 (not found)→ (false, nil)  [definitively absent]
+//   - HTTP non-2xx (auth/server)         → (false, err)  [could not determine]
+//
+// The two failure modes are distinguished so a pre-check can tell "missing"
+// apart from "could not reach OpenList".
+func (c *Client) Exists(ctx context.Context, path string) (bool, error) {
+	body, _ := json.Marshal(map[string]any{"path": path})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/fs/get", bytes.NewReader(body))
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Authorization", c.token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode/100 != 2 {
+		return false, fmt.Errorf("openlist exists: HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+	var parsed struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return false, fmt.Errorf("openlist exists: parse: %w", err)
+	}
+	return parsed.Code == 200, nil
+}
