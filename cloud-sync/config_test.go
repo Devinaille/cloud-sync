@@ -374,6 +374,76 @@ openlist_url: http://x
 	}
 }
 
+func TestLoad_UIListen_Default(t *testing.T) {
+	setFullEnv(t)
+	prev, ok := os.LookupEnv("UI_LISTEN")
+	os.Unsetenv("UI_LISTEN")
+	t.Cleanup(func() {
+		if ok {
+			os.Setenv("UI_LISTEN", prev)
+		} else {
+			os.Unsetenv("UI_LISTEN")
+		}
+	})
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.UIListen != ":8099" {
+		t.Errorf("UIListen = %q, want %q (default)", cfg.UIListen, ":8099")
+	}
+}
+
+func TestLoad_UIListen_EnvOverridesDefault(t *testing.T) {
+	setFullEnv(t)
+	t.Setenv("UI_LISTEN", ":9000")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.UIListen != ":9000" {
+		t.Errorf("UIListen = %q, want %q", cfg.UIListen, ":9000")
+	}
+}
+
+func TestLoad_UIListen_ExplicitEmptyDisables(t *testing.T) {
+	setFullEnv(t)
+	t.Setenv("UI_LISTEN", "")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.UIListen != "" {
+		t.Errorf("UIListen = %q, want \"\" (explicit empty disables)", cfg.UIListen)
+	}
+}
+
+func TestLoad_FileUIListen_OverridesEnv(t *testing.T) {
+	setFullEnv(t)
+	t.Setenv("UI_LISTEN", ":9000")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cloud-sync.yaml")
+	yaml := `
+openlist_url: http://x
+ui_listen: ":7000"
+`
+	if err := os.WriteFile(path, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.UIListen != ":7000" {
+		t.Errorf("UIListen = %q, want %q (file should override env)", cfg.UIListen, ":7000")
+	}
+}
+
 // TestLoad_ExampleConfigParses loads the shipped ../config.example.yaml through
 // the same strict decoder Load uses (KnownFields(true)), so a field renamed in
 // fileConfig without updating the example (or vice versa) fails here instead of

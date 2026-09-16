@@ -61,6 +61,8 @@ export POLL_INTERVAL_SECONDS=1
 export TASK_TIMEOUT_SECONDS=60
 export LOG_LEVEL=debug
 export LOG_FILE=
+# Non-default port so the smoke UI doesn't clash with a real instance.
+export UI_LISTEN=:18099
 
 "$BIN" > "$WS/cloud-sync.log" 2>&1 &
 CS_PID=$!
@@ -86,6 +88,44 @@ echo "--- state record ---"
 STATE=$(find "$WS/.sync_status" -name 'SmokeTest.mkv.json' | head -1)
 echo "$STATE"
 cat "$STATE"
+
+echo "--- web ui: GET /api/status ---"
+UI_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18099/api/status)
+[ "$UI_CODE" = "200" ] || { echo "FAIL: /api/status returned HTTP $UI_CODE"; exit 1; }
+curl -s http://127.0.0.1:18099/api/status | grep -q '"ok":true' \
+    || { echo "FAIL: /api/status not ok"; exit 1; }
+
+echo "--- web ui: GET /api/files?state=synced ---"
+UI_FILES=$(curl -s "http://127.0.0.1:18099/api/files?state=synced")
+echo "$UI_FILES" | grep -q '"total"' \
+    || { echo "FAIL: /api/files missing total: $UI_FILES"; exit 1; }
+
+echo "--- web ui: GET / ---"
+curl -s http://127.0.0.1:18099/ | grep -q 'cloud-sync' \
+    || { echo "FAIL: / does not contain 'cloud-sync'"; exit 1; }
+
+echo "--- web ui: POST /api/retry ---"
+UI_RETRY=$(curl -s -X POST -H 'Content-Type: application/json' \
+    -d '{"keys":["Movies/SmokeTest.mkv"]}' \
+    http://127.0.0.1:18099/api/retry)
+echo "$UI_RETRY" | grep -q '"results"' \
+    || { echo "FAIL: /api/retry missing results: $UI_RETRY"; exit 1; }
+echo "$UI_RETRY" | grep -q '"ok":true' \
+    || { echo "FAIL: /api/retry rejected the key: $UI_RETRY"; exit 1; }
+# Retry deleted the record and re-enqueued the file; wait for it to be re-synced
+# so the cleanup section below still has a record to rewrite.
+UI_STATE=""
+for _ in $(seq 1 20); do
+    UI_STATE=$(find "$WS/.sync_status" -name 'SmokeTest.mkv.json' -print -quit)
+    [ -n "$UI_STATE" ] && break
+    sleep 1
+done
+[ -n "$UI_STATE" ] || {
+    echo "FAIL: retry did not re-sync Movies/SmokeTest.mkv"
+    echo "--- full log ---"
+    cat "$WS/cloud-sync.log"
+    exit 1
+}
 
 echo "--- cleanup dry-run line ---"
 # Rewrite the synced record's cleanup_at to the past, then bounce cloud-sync

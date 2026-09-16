@@ -28,6 +28,7 @@ type Config struct {
 	AllowedPrefixes   []string
 	LogLevel          string
 	LogFile           string
+	UIListen          string
 }
 
 const minFileSizeBytes = 100 * 1024 * 1024 // 100MB
@@ -56,6 +57,7 @@ type fileConfig struct {
 	AllowedSourcePrefixes []string `yaml:"allowed_source_prefixes"`
 	LogLevel              string   `yaml:"log_level"`
 	LogFile               string   `yaml:"log_file"`
+	UIListen              *string  `yaml:"ui_listen"`
 }
 
 // Load builds a Config from an optional YAML file plus process environment.
@@ -125,6 +127,9 @@ func loadWithFile(path string) (*Config, error) {
 	if f.LogFile != "" {
 		os.Setenv("LOG_FILE", f.LogFile)
 	}
+	if f.UIListen != nil {
+		os.Setenv("UI_LISTEN", *f.UIListen)
+	}
 	// Bool: only override env when the YAML actually set the key. Pointer-
 	// nil distinguishes "absent" from "explicitly false".
 	if f.CleanupDryRun != nil {
@@ -162,6 +167,11 @@ func loadFromEnv() (*Config, error) {
 		*s.dst = v
 	}
 	cfg.LogFile = os.Getenv("LOG_FILE") // optional
+	if v, ok := os.LookupEnv("UI_LISTEN"); ok {
+		cfg.UIListen = v
+	} else {
+		cfg.UIListen = ":8099"
+	}
 
 	// comma-split prefixes
 	raw := os.Getenv("ALLOWED_SOURCE_PREFIXES")

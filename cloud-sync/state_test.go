@@ -203,3 +203,105 @@ func TestState_ListForCleanup_NestedKeyUpdatedInPlace(t *testing.T) {
 		t.Errorf("duplicate basename record created at %s", dup)
 	}
 }
+
+func TestState_ListAll_MixedBuckets(t *testing.T) {
+	st := newTestState(t)
+	_ = st.EnsureDirs()
+	now := time.Now().UTC().Truncate(time.Second)
+	recs := []*StatusRecord{
+		{Key: "Movies/A.mkv", SrcPath: "/x/Movies/A.mkv", SyncedAt: now, CleanupAt: now.Add(time.Hour), Status: "synced"},
+		{Key: "Movies/B.mkv", SrcPath: "/x/Movies/B.mkv", SyncedAt: now, CleanupAt: now.Add(time.Hour), Status: "failed", Error: "boom"},
+		{Key: "Movies/C.mkv", SrcPath: "/x/Movies/C.mkv", SyncedAt: now.Add(-24 * time.Hour), CleanupAt: now.Add(time.Hour), Status: "synced"},
+	}
+	for _, r := range recs {
+		if err := st.Write(r); err != nil {
+			t.Fatalf("Write %s: %v", r.Key, err)
+		}
+	}
+	got, err := st.ListAll()
+	if err != nil {
+		t.Fatalf("ListAll: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("ListAll returned %d records, want 3", len(got))
+	}
+	byKey := map[string]string{}
+	for _, r := range got {
+		byKey[r.Key] = r.Status
+	}
+	for _, want := range recs {
+		status, ok := byKey[want.Key]
+		if !ok {
+			t.Errorf("ListAll missing key %q", want.Key)
+			continue
+		}
+		if status != want.Status {
+			t.Errorf("ListAll[%q].Status = %q, want %q", want.Key, status, want.Status)
+		}
+	}
+}
+
+func TestState_Delete_RemovesAcrossBuckets(t *testing.T) {
+	st := newTestState(t)
+	_ = st.EnsureDirs()
+	now := time.Now().UTC().Truncate(time.Second)
+	for _, r := range []*StatusRecord{
+		{Key: "Movies/D.mkv", SrcPath: "/x/Movies/D.mkv", SyncedAt: now, CleanupAt: now.Add(time.Hour), Status: "synced"},
+		{Key: "Movies/D.mkv", SrcPath: "/x/Movies/D.mkv", SyncedAt: now, CleanupAt: now.Add(time.Hour), Status: "failed", Error: "boom"},
+	} {
+		if err := st.Write(r); err != nil {
+			t.Fatalf("Write %s: %v", r.Key, err)
+		}
+	}
+	if err := st.Delete("Movies/D.mkv"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	ok, err := st.AlreadySynced("Movies/D.mkv")
+	if err != nil {
+		t.Fatalf("AlreadySynced: %v", err)
+	}
+	if ok {
+		t.Error("AlreadySynced = true after Delete, want false")
+	}
+	got, err := st.ListAll()
+	if err != nil {
+		t.Fatalf("ListAll: %v", err)
+	}
+	for _, r := range got {
+		if r.Key == "Movies/D.mkv" {
+			t.Errorf("ListAll still contains deleted key %q", r.Key)
+		}
+	}
+}
+
+func TestState_Delete_MissingIsNoError(t *testing.T) {
+	st := newTestState(t)
+	_ = st.EnsureDirs()
+	if err := st.Delete("nope.mkv"); err != nil {
+		t.Errorf("Delete of missing key = %v, want nil", err)
+	}
+}
+
+func TestState_Delete_RejectsTraversal(t *testing.T) {
+	st := newTestState(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	rec := &StatusRecord{
+		Key: "Movies/E.mkv", SrcPath: "/x/Movies/E.mkv", SyncedAt: now,
+		CleanupAt: now.Add(time.Hour), Status: "synced",
+	}
+	if err := st.Write(rec); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	decoy := filepath.Join(st.root, "..", "decoy.json")
+	if err := os.WriteFile(decoy, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write decoy: %v", err)
+	}
+	for _, key := range []string{"../decoy", "../../decoy", "/abs/path", ""} {
+		if err := st.Delete(key); err == nil {
+			t.Errorf("Delete(%q) = nil, want error", key)
+		}
+	}
+	if _, err := os.Stat(decoy); err != nil {
+		t.Errorf("decoy removed by traversal Delete: %v", err)
+	}
+}

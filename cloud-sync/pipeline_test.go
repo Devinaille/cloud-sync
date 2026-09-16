@@ -140,6 +140,25 @@ func TestPipeline_HappyPath(t *testing.T) {
 	}
 }
 
+func TestPipeline_Process_Enqueues(t *testing.T) {
+	p, up, st, mediaDir := newTestPipeline(t)
+	writeVideo(t, mediaDir, "Movies/P.mkv")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	p.Process(ctx, FileEvent{Path: filepath.Join(mediaDir, "Movies/P.mkv"), Size: 4096, Detected: time.Now()})
+
+	up.mu.Lock()
+	defer up.mu.Unlock()
+	if len(up.copyCalls) != 1 {
+		t.Fatalf("Copy calls = %d, want 1", len(up.copyCalls))
+	}
+	ok, _ := st.AlreadySynced("Movies/P.mkv")
+	if !ok {
+		t.Errorf("AlreadySynced = false after Process")
+	}
+}
+
 func TestPipeline_WritesAbsoluteSrcPath(t *testing.T) {
 	p, _, st, mediaDir := newTestPipeline(t)
 	writeVideo(t, mediaDir, "Movies/Z.mkv")

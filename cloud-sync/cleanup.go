@@ -40,9 +40,21 @@ func (c *Cleanup) Run(ctx context.Context) {
 
 // Tick runs a single cleanup pass. Exported for tests.
 func (c *Cleanup) Tick(ctx context.Context, now time.Time) error {
+	_, err := c.tick(ctx, now)
+	return err
+}
+
+// TickNow runs a single cleanup pass against the current time and returns the
+// number of records processed. Exported for the web UI, which triggers a
+// cleanup on demand.
+func (c *Cleanup) TickNow(ctx context.Context) (int, error) {
+	return c.tick(ctx, time.Now())
+}
+
+func (c *Cleanup) tick(ctx context.Context, now time.Time) (int, error) {
 	recs, err := c.st.ListForCleanup(now)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	const maxPerTick = 50
 	processed := 0
@@ -81,5 +93,5 @@ func (c *Cleanup) Tick(ctx context.Context, now time.Time) error {
 		}
 		processed++
 	}
-	return nil
+	return processed, nil
 }

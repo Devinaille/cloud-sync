@@ -1,0 +1,409 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+// apiTestEnv bundles a started Supervisor and its temp dirs for API tests.
+type apiTestEnv struct {
+	sup     *Supervisor
+	up      *mockUploader
+	watch   string
+	syncDir string
+	cfgPath string
+	dir     string
+}
+
+// newTestSupervisor builds a valid on-disk config, loads it, and starts a
+// Supervisor backed by a mock uploader. Test-tuned knobs (small min size, fast
+// stabilize/poll, cleanup dry-run) keep the tests quick and non-destructive.
+func newTestSupervisor(t *testing.T) *apiTestEnv {
+	t.Helper()
+	preserveLoadEnv(t)
+
+	dir := t.TempDir()
+	watch := filepath.Join(dir, "media")
+	syncDir := filepath.Join(dir, ".sync_status")
+	for _, d := range []string{watch, syncDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfgPath := filepath.Join(dir, "cloud-sync.yaml")
+	writeSupervisorYAML(t, cfgPath, watch, syncDir, 2)
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	cfg.MinFileSize = 1024
+	cfg.StabilizeWait = 20 * time.Millisecond
+	cfg.PollInterval = 10 * time.Millisecond
+	cfg.CleanupDryRun = true
+
+	up := newMockUploader()
+	sup := NewSupervisor(cfgPath, cfg, supervisorTestLogger(), SupervisorDeps{
+		NewUploader: func(c *Config, l *slog.Logger) Uploader { return up },
+	})
+	if err := sup.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(sup.Stop)
+
+	// Let the startup scan finish before tests touch the watch dirs; otherwise
+	// a file written immediately after Start could be picked up by the scan.
+	time.Sleep(50 * time.Millisecond)
+
+	return &apiTestEnv{sup: sup, up: up, watch: watch, syncDir: syncDir, cfgPath: cfgPath, dir: dir}
+}
+
+func (e *apiTestEnv) server(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(NewWebServer(e.sup, supervisorTestLogger()).Handler())
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func getJSON(t *testing.T, url string, v any) int {
+	t.Helper()
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	defer resp.Body.Close()
+	if v != nil {
+		if err := json.NewDecoder(resp.Body).Decode(v); err != nil {
+			t.Fatalf("decode %s: %v", url, err)
+		}
+	}
+	return resp.StatusCode
+}
+
+func doJSON(t *testing.T, method, url string, body any, v any) int {
+	t.Helper()
+	var buf io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		buf = bytes.NewReader(data)
+	}
+	req, err := http.NewRequest(method, url, buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, url, err)
+	}
+	defer resp.Body.Close()
+	if v != nil {
+		if err := json.NewDecoder(resp.Body).Decode(v); err != nil {
+			t.Fatalf("decode %s %s: %v", method, url, err)
+		}
+	}
+	return resp.StatusCode
+}
+
+func TestAPI_Status_OK(t *testing.T) {
+	env := newTestSupervisor(t)
+	srv := env.server(t)
+
+	var body struct {
+		OK     bool           `json:"ok"`
+		Counts map[string]int `json:"counts"`
+		Config map[string]any `json:"config"`
+	}
+	if code := getJSON(t, srv.URL+"/api/status", &body); code != http.StatusOK {
+		t.Fatalf("status code = %d, want 200", code)
+	}
+	if !body.OK {
+		t.Errorf("ok = false, want true")
+	}
+	for _, k := range []string{"synced", "failed", "cleaned", "unsynced"} {
+		if _, ok := body.Counts[k]; !ok {
+			t.Errorf("counts missing %q", k)
+		}
+	}
+	if _, ok := body.Config["openlist_url"]; !ok {
+		t.Errorf("config missing openlist_url: %#v", body.Config)
+	}
+	if _, ok := body.Config["openlist_token"]; ok {
+		t.Errorf("config leaked openlist_token: %#v", body.Config)
+	}
+}
+
+func TestAPI_Status_Degraded(t *testing.T) {
+	cfg := supervisorTestCfg(t)
+	sup := NewSupervisor("", cfg, supervisorTestLogger(), SupervisorDeps{NewUploader: mockUploaderFactory()})
+	srv := httptest.NewServer(NewWebServer(sup, supervisorTestLogger()).Handler())
+	defer srv.Close()
+
+	var body struct {
+		OK    bool   `json:"ok"`
+		Error string `json:"error"`
+	}
+	if code := getJSON(t, srv.URL+"/api/status", &body); code != http.StatusOK {
+		t.Fatalf("status code = %d, want 200", code)
+	}
+	if body.OK {
+		t.Errorf("ok = true, want false for unstarted supervisor")
+	}
+	if body.Error == "" {
+		t.Errorf("error is empty, want non-empty")
+	}
+}
+
+func TestAPI_Files_FiltersAndPaginates(t *testing.T) {
+	env := newTestSupervisor(t)
+	_, st, _, ok := env.sup.Snapshot()
+	if !ok {
+		t.Fatal("no active generation")
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	seed := func(key, status string) {
+		rec := &StatusRecord{
+			Key:       key,
+			SrcPath:   filepath.Join(env.watch, key),
+			SrcSize:   2048,
+			SyncedAt:  now,
+			CleanupAt: now.Add(72 * time.Hour),
+			Status:    status,
+		}
+		if err := st.Write(rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed("A.mkv", "synced")
+	seed("B.mkv", "failed")
+	seed("C.mkv", "cleaned")
+
+	srv := env.server(t)
+
+	var synced filesResponse
+	if code := getJSON(t, srv.URL+"/api/files?state=synced", &synced); code != http.StatusOK {
+		t.Fatalf("state=synced code = %d", code)
+	}
+	if synced.Total != 1 || len(synced.Items) != 1 {
+		t.Fatalf("state=synced total=%d items=%d, want 1/1", synced.Total, len(synced.Items))
+	}
+	if synced.Items[0].Key != "A.mkv" || synced.Items[0].State != "synced" {
+		t.Errorf("state=synced item = %+v", synced.Items[0])
+	}
+
+	var paged filesResponse
+	if code := getJSON(t, srv.URL+"/api/files?page_size=1&page=2", &paged); code != http.StatusOK {
+		t.Fatalf("paged code = %d", code)
+	}
+	if paged.Total != 3 || paged.Page != 2 || paged.PageSize != 1 {
+		t.Errorf("paging meta = total:%d page:%d size:%d, want 3/2/1", paged.Total, paged.Page, paged.PageSize)
+	}
+	if len(paged.Items) != 1 || paged.Items[0].Key != "B.mkv" {
+		t.Errorf("page 2 items = %+v, want [B.mkv]", paged.Items)
+	}
+}
+
+func TestAPI_Files_Unsynced(t *testing.T) {
+	env := newTestSupervisor(t)
+
+	// Write into a subdir created after Start: the fsnotify watcher only adds
+	// directories that exist when it is constructed, so the pipeline will not
+	// race the scan by processing this file.
+	sub := filepath.Join(env.watch, "Fresh")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "New.mkv"), make([]byte, 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := env.server(t)
+	var body filesResponse
+	if code := getJSON(t, srv.URL+"/api/files?state=unsynced", &body); code != http.StatusOK {
+		t.Fatalf("code = %d", code)
+	}
+	var found *fileItem
+	for i := range body.Items {
+		if body.Items[i].Key == "Fresh/New.mkv" {
+			found = &body.Items[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("unsynced item Fresh/New.mkv not found in %+v", body.Items)
+	}
+	if found.State != "unsynced" {
+		t.Errorf("state = %q, want unsynced", found.State)
+	}
+	if found.Size != 4096 {
+		t.Errorf("size = %d, want 4096", found.Size)
+	}
+}
+
+func TestAPI_Config_PutValidReloads(t *testing.T) {
+	env := newTestSupervisor(t)
+	orig, err := os.ReadFile(env.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newYAML := strings.Replace(string(orig), "upload_concurrency: 2", "upload_concurrency: 7", 1)
+	if newYAML == string(orig) {
+		t.Fatal("failed to change upload_concurrency in YAML")
+	}
+
+	srv := env.server(t)
+	var putResp configPutResponse
+	if code := doJSON(t, http.MethodPut, srv.URL+"/api/config", map[string]string{"yaml": newYAML}, &putResp); code != http.StatusOK {
+		t.Fatalf("PUT code = %d, want 200", code)
+	}
+	if !putResp.OK {
+		t.Errorf("PUT ok = false")
+	}
+
+	var cfgResp struct {
+		YAML string `json:"yaml"`
+	}
+	getJSON(t, srv.URL+"/api/config", &cfgResp)
+	if !strings.Contains(cfgResp.YAML, "upload_concurrency: 7") {
+		t.Errorf("GET /api/config did not reflect update:\n%s", cfgResp.YAML)
+	}
+
+	var status struct {
+		Config *configView `json:"config"`
+	}
+	getJSON(t, srv.URL+"/api/status", &status)
+	if status.Config == nil || status.Config.UploadConcurrency != 7 {
+		t.Errorf("status config = %+v, want upload_concurrency 7", status.Config)
+	}
+}
+
+func TestAPI_Config_PutInvalidRejected(t *testing.T) {
+	env := newTestSupervisor(t)
+	before, err := os.ReadFile(env.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv := env.server(t)
+	code := doJSON(t, http.MethodPut, srv.URL+"/api/config",
+		map[string]string{"yaml": "openlist_url: [unterminated\n"}, nil)
+	if code != http.StatusBadRequest {
+		t.Fatalf("PUT invalid code = %d, want 400", code)
+	}
+
+	after, err := os.ReadFile(env.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("config file changed after invalid PUT")
+	}
+}
+
+func TestAPI_Retry_DeletesAndEnqueues(t *testing.T) {
+	env := newTestSupervisor(t)
+	_, st, _, ok := env.sup.Snapshot()
+	if !ok {
+		t.Fatal("no active generation")
+	}
+
+	// Create the source in a new subdir so the watcher does not pre-empt retry.
+	sub := filepath.Join(env.watch, "Movies")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(sub, "R.mkv")
+	if err := os.WriteFile(src, make([]byte, 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	key := "Movies/R.mkv"
+	now := time.Now().UTC().Truncate(time.Second)
+	if err := st.Write(&StatusRecord{
+		Key: key, SrcPath: src, SrcSize: 4096,
+		SyncedAt: now, CleanupAt: now.Add(72 * time.Hour), Status: "failed",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := env.server(t)
+	var resp struct {
+		Results []retryResult `json:"results"`
+	}
+	if code := doJSON(t, http.MethodPost, srv.URL+"/api/retry", map[string]any{"keys": []string{key}}, &resp); code != http.StatusOK {
+		t.Fatalf("retry code = %d, want 200", code)
+	}
+	if len(resp.Results) != 1 || !resp.Results[0].OK {
+		t.Fatalf("retry results = %+v, want one ok", resp.Results)
+	}
+
+	// The failed record is deleted synchronously by the handler. (A retried
+	// attempt may later write a fresh "synced" record, so assert on "failed".)
+	recs, err := st.ListAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rec := range recs {
+		if rec.Key == key && rec.Status == "failed" {
+			t.Errorf("failed record %q still present after retry", key)
+		}
+	}
+
+	// The upload is enqueued asynchronously and tracked by the generation
+	// WaitGroup. Poll until the mock observes the Copy; sup.Stop (registered by
+	// newTestSupervisor's t.Cleanup) then drains the goroutine before the test
+	// temp dirs are removed.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		env.up.mu.Lock()
+		n := len(env.up.copyCalls)
+		env.up.mu.Unlock()
+		if n > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("mock uploader received no Copy call after retry")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestAPI_CleanupRun(t *testing.T) {
+	env := newTestSupervisor(t)
+	_, st, _, ok := env.sup.Snapshot()
+	if !ok {
+		t.Fatal("no active generation")
+	}
+
+	past := time.Now().UTC().Add(-100 * time.Hour)
+	if err := st.Write(&StatusRecord{
+		Key: "Due.mkv", SrcPath: filepath.Join(env.watch, "Due.mkv"), SrcSize: 2048,
+		SyncedAt: past, CleanupAt: past.Add(time.Hour), Status: "synced",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := env.server(t)
+	var resp struct {
+		Processed int `json:"processed"`
+	}
+	if code := doJSON(t, http.MethodPost, srv.URL+"/api/cleanup/run", nil, &resp); code != http.StatusOK {
+		t.Fatalf("cleanup code = %d, want 200", code)
+	}
+	if resp.Processed < 1 {
+		t.Errorf("processed = %d, want >= 1", resp.Processed)
+	}
+}

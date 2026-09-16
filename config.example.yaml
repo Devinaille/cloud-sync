@@ -23,6 +23,10 @@ openlist_dst_storage: /139yun_media
 #   true            → send overwrite=true; OpenList replaces the cloud file.
 openlist_overwrite: false
 
+# Web UI + JSON API listen address. Default ":8099".
+# Set to "" (empty) or "-" to disable the UI entirely.
+ui_listen: ":8099"
+
 # Watched local directories. All paths must exist. fsnotify recurses into
 # each one; uploads from any of them share the same cloud-side layout
 # (under /139yun_media/media/<rel>). Add or remove entries freely.

@@ -61,6 +61,9 @@ func (p *Pipeline) Run(ctx context.Context, events <-chan FileEvent) {
 	}
 }
 
+// Process sends one file through the same state machine used by Run.
+func (p *Pipeline) Process(ctx context.Context, ev FileEvent) { p.process(ctx, ev) }
+
 func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
 	// 1. stabilize: wait until the file stops changing.
 	if err := stabilize(ctx, ev.Path, p.cfg.StabilizeWait); err != nil {

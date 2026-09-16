@@ -24,6 +24,10 @@ services:
       # false → skip_existing (keep cloud file if present); true → overwrite
       - OPENLIST_OVERWRITE=false
 
+      # Web UI + JSON API (default :8099; empty or "-" disables). No auth —
+      # expose only on a trusted LAN. Change requires a restart (bind at startup).
+      - UI_LISTEN=:8099
+
       # Watched local directories (comma-separated absolute paths; must exist)
       - WATCH_DIRS=/mnt/basic/media/media,/mnt/basic/media/ani-rss
 
@@ -46,14 +50,19 @@ services:
       # Logging
       - LOG_LEVEL=INFO
       - LOG_FILE=                                # empty = stdout, captured by `docker compose logs`
+    ports:
+      # Web UI + JSON API. No auth — expose only on a trusted LAN (or bind to
+      # 127.0.0.1 and reach it via an SSH tunnel / reverse proxy).
+      - "8099:8099"
     volumes:
       # ZFS dataset: cloud-sync writes .sync_status here and removes videos after
       # 72h. The app-level ALLOWED_SOURCE_PREFIXES whitelist is the actual safety
       # boundary for the cleanup pass.
       - /mnt/basic/media:/mnt/basic/media:rw
       # Config file (recommended path; copy config.example.yaml to a working
-      # file and edit, then update the source path on the left).
-      - ./config.example.yaml:/config/cloud-sync.yaml:ro
+      # file and edit, then update the source path on the left). Mounted :rw
+      # so "Save & Reload" in the Web UI can rewrite it.
+      - ./config.example.yaml:/config/cloud-sync.yaml:rw
     networks:
       - media
 

@@ -224,6 +224,29 @@ docker compose logs -f cloud-sync
 
 也可以完全退回纯 env 模式：删掉 `/config/cloud-sync.yaml`（或注释 compose 里的挂载），env 走通。
 
+## Web UI
+
+二进制内嵌一个单页 UI + JSON API，默认监听 `:8099`（`UI_LISTEN` / `ui_listen`；显式空字符串或 `-` 禁用）。浏览器打开 `http://<host>:8099/`。
+
+三个 Tab：**Dashboard**（计数 / OpenList 连通性 / uptime / watch 目录 / 手动 cleanup）、**Files**（筛选 / 搜索 / 分页 / 勾选重试）、**Config**（编辑 YAML + Save & Reload）。
+
+JSON API：
+
+| Method + Path | 用途 |
+|---|---|
+| `GET /api/status` | 计数、ping、uptime、生效配置（token **不返回**） |
+| `GET /api/files?state=&q=&page=&page_size=` | 文件列表（`state` ∈ all/synced/failed/cleaned/unsynced） |
+| `GET /api/config` | 返回配置文件原文（**含 token**） |
+| `PUT /api/config` | 校验 → 原子写盘 → 热重载 |
+| `POST /api/retry` | 按 keys 或 state 批量重试 |
+| `POST /api/cleanup/run` | 立即跑一次 cleanup tick |
+
+> **无鉴权**：任何能访问该端口的人都能读取配置（含 token）、修改配置、触发重试/清理。只在可信内网暴露；或只绑 `127.0.0.1` 再走 SSH 隧道 / 反向代理。
+
+- **保存配置会写盘**：`PUT /api/config` 原子写回 `main()` 加载的配置文件（容器内 `/config/cloud-sync.yaml`）。该文件（或其挂载目录）必须**可写**，否则保存返回 500；compose 挂载用 `:rw`。
+- **`ui_listen` 改动需重启**：监听地址在进程启动时绑定，热重载不会换端口。
+- **裸机 / systemd**：`ProtectSystem=strict` 时把配置目录加进 `ReadWritePaths`，否则保存配置失败。
+
 ## Test
 
 ```bash
@@ -240,6 +263,7 @@ YAML 与 env 同名（小写 ↔ 大写）。下表是底层 env 名：
 | `OPENLIST_SRC_STORAGE` | OpenList local 存储**根**（`/local_media`；pipeline 上传时自动追加 `media/` 子目录） |
 | `OPENLIST_DST_STORAGE` | OpenList 139yun 存储**根**（`/139yun_media`；同上追加 `media/`） |
 | `OPENLIST_OVERWRITE` (默认 false) | false=目标已存在时 `skip_existing`（保留云端文件）；true=`overwrite`（覆盖） |
+| `UI_LISTEN` / `ui_listen` (默认 `:8099`) | Web UI + JSON API 监听地址；显式空字符串或 `-` 禁用 UI |
 | `WATCH_DIRS` | 逗号分隔的**绝对**本地路径列表（fsnotify 递归监听每个） |
 | `SYNC_STATUS_DIR` | `.sync_status/` 绝对路径 |
 | `ALLOWED_SOURCE_PREFIXES` | 逗号分隔，cleanup 防御性白名单（必须包含每个 WATCH_DIR） |
@@ -252,7 +276,7 @@ YAML 与 env 同名（小写 ↔ 大写）。下表是底层 env 名：
 | `LOG_LEVEL` (debug/info/warn/error) | 日志等级 |
 | `LOG_FILE` (空=stdout) | 日志文件路径；空表示 stdout（由 docker compose 收集） |
 
-> **默认值说明**：除 `CLEANUP_DRY_RUN`（代码默认 false）和 `LOG_FILE`（可选）外，上表数值项**没有代码默认值**——YAML/env 都没设会启动报错。`config.example.yaml` 给出的 72 / 2 / 30 / 3 / 1800 只是推荐示例。
+> **默认值说明**：除 `CLEANUP_DRY_RUN`（代码默认 false）、`LOG_FILE`（可选）和 `UI_LISTEN`（代码默认 `:8099`）外，上表数值项**没有代码默认值**——YAML/env 都没设会启动报错。`config.example.yaml` 给出的 72 / 2 / 30 / 3 / 1800 只是推荐示例。
 
 **未通过 env / config 暴露**：`MinFileSize` 硬编码 100 MB（编译时常量）。要调，改源码 `cloud-sync/config.go:minFileSizeBytes` 后重 build。
 
@@ -284,4 +308,5 @@ YAML 与 env 同名（小写 ↔ 大写）。下表是底层 env 名：
 | cleanup 没日志 | `CLEANUP_DRY_RUN` 默认 false 时真删，但只在 `CleanupAt < now` 才动。改 `cleanup_at` 过去时间或调小 `CLEANUP_AFTER_HOURS`。 |
 | 重传同一个文件，云端内容没变 | 默认 `OPENLIST_OVERWRITE=false` → `skip_existing=true`，目标已存在就跳过。要覆盖：把配置文件的 `openlist_overwrite` 改为 `true`（或删掉该 key 再用 env `OPENLIST_OVERWRITE=true`——**文件值优先于 env**）。 |
 | `code=403 msg=file [X] exists` | 客户端同时发了 `overwrite=false` + `skip_existing=false`（不该发生；检查配置）。 |
-| 文件改了但容器还是旧值 | 配置文件是挂载的（:ro），改完主机文件后 `docker compose restart cloud-sync`，不是 `up`。 |
+| 文件改了但容器还是旧值 | 配置文件是挂载的（`:rw`），改完主机文件后 `docker compose restart cloud-sync`，不是 `up`（或用 Web UI 的 Save & Reload 热重载）。 |
+| UI 打不开 | `UI_LISTEN` 为空/`-` 被禁用、端口未映射（compose `ports`）、或进程未监听（日志里找 `web ui listening`）。 |

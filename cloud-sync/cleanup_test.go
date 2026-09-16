@@ -99,6 +99,22 @@ func TestCleanup_RealDelete_RemovesVideoOnly(t *testing.T) {
 	}
 }
 
+func TestCleanup_TickNow_ReturnsCount(t *testing.T) {
+	cu, st, mediaDir := newTestCleanup(t, true)
+	seedSynced(t, st, mediaDir, "Movies/A.mkv")
+	seedSynced(t, st, mediaDir, "Movies/B.mkv")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	n, err := cu.TickNow(ctx)
+	if err != nil {
+		t.Fatalf("TickNow: %v", err)
+	}
+	if n < 2 {
+		t.Errorf("TickNow processed = %d, want >= 2", n)
+	}
+}
+
 func TestCleanup_WhitelistProtection(t *testing.T) {
 	dir := t.TempDir()
 	outOfScope := filepath.Join(dir, "outside")

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -29,62 +28,24 @@ func main() {
 		"cleanup_dry_run", cfg.CleanupDryRun,
 	)
 
-	client := NewClient(cfg.OpenListURL, cfg.OpenListToken, log)
-	pingCtx, cancelPing := context.WithCancel(context.Background())
-	if err := client.Ping(pingCtx); err != nil {
-		cancelPing()
-		log.Error("openlist ping failed at startup", "err", err)
-		os.Exit(3)
-	}
-	cancelPing()
-	log.Info("openlist ping ok")
-
-	stateMgr := NewStateManager(cfg.SyncStatusDir, log)
-	if err := stateMgr.EnsureDirs(); err != nil {
-		log.Error("state init failed", "err", err)
-		os.Exit(4)
-	}
-
-	watcher, err := NewWatcher(
-		cfg.WatchDirs,
-		cfg.MinFileSize, log,
-	)
-	if err != nil {
-		log.Error("watcher init failed", "err", err)
-		os.Exit(5)
-	}
-	defer watcher.Close()
-
-	pipeline := NewPipeline(cfg, log, client, stateMgr)
-	cleanup := NewCleanup(cfg, log, stateMgr)
-
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	scanDone := make(chan struct{})
-	go func() {
-		defer close(scanDone)
-		if err := pipeline.StartupScan(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			log.Error("startup scan error", "err", err)
-		}
-	}()
+	sup := NewSupervisor(cfgPath, cfg, log, SupervisorDeps{})
+	if err := sup.Start(ctx); err != nil {
+		log.Error("initial start failed; web UI (if enabled) remains available", "err", err)
+	}
+	defer sup.Stop()
 
-	go cleanup.Run(ctx)
-
-	go func() {
-		for {
-			select {
-			case err := <-watcher.Errors():
-				log.Warn("watcher error", "err", err)
-			case <-ctx.Done():
-				return
+	if cfg.UIListen != "" && cfg.UIListen != "-" {
+		srv := NewWebServer(sup, log)
+		go func() {
+			if err := srv.Serve(ctx, cfg.UIListen); err != nil && ctx.Err() == nil {
+				log.Error("web server stopped", "err", err)
 			}
-		}
-	}()
-
-	pipeline.Run(ctx, watcher.Events())
+		}()
+	}
 
 	<-ctx.Done()
 	log.Info("shutdown signal received, exiting")
-	<-scanDone
 }

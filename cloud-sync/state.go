@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -29,6 +30,7 @@ type StatusRecord struct {
 type StateManager struct {
 	root string
 	log  *slog.Logger
+	mu   sync.Mutex
 }
 
 func NewStateManager(root string, log *slog.Logger) *StateManager {
@@ -127,6 +129,8 @@ func (s *StateManager) Update(rec *StatusRecord) error {
 }
 
 func (s *StateManager) atomicWrite(p string, rec *StatusRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
@@ -192,6 +196,155 @@ func (s *StateManager) ListForCleanup(now time.Time) ([]*StatusRecord, error) {
 		}
 	}
 	return out, nil
+}
+
+// ListAll returns every record across all date buckets and FAILED/<date>/.
+// Each returned record's Key is its path relative to the bucket root.
+func (s *StateManager) ListAll() ([]*StatusRecord, error) {
+	var out []*StatusRecord
+	entries, err := os.ReadDir(s.root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if e.Name() == "FAILED" {
+			failedDir := filepath.Join(s.root, "FAILED")
+			fEntries, err := os.ReadDir(failedDir)
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return nil, err
+			}
+			for _, fe := range fEntries {
+				if !fe.IsDir() {
+					continue
+				}
+				if err := s.collectBucketRecords(filepath.Join(failedDir, fe.Name()), &out); err != nil {
+					return nil, err
+				}
+			}
+			continue
+		}
+		if !looksLikeDate(e.Name()) {
+			continue
+		}
+		if err := s.collectBucketRecords(filepath.Join(s.root, e.Name()), &out); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func (s *StateManager) collectBucketRecords(base string, out *[]*StatusRecord) error {
+	return filepath.WalkDir(base, func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil || d.IsDir() {
+			return walkErr
+		}
+		if !strings.HasSuffix(p, ".json") {
+			return nil
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			s.log.Warn("state: read failed", "path", p, "err", err)
+			return nil
+		}
+		var rec StatusRecord
+		if err := json.Unmarshal(b, &rec); err != nil {
+			s.log.Warn("state: parse failed", "path", p, "err", err)
+			return nil
+		}
+		rel, err := filepath.Rel(base, p)
+		if err != nil {
+			s.log.Warn("state: rel path failed", "path", p, "err", err)
+			return nil
+		}
+		rec.Key = strings.TrimSuffix(filepath.ToSlash(rel), ".json")
+		*out = append(*out, &rec)
+		return nil
+	})
+}
+
+// Delete removes key's record from every date bucket and FAILED/<date>/.
+// Missing records are not an error. Empty parent dirs are removed best-effort.
+func (s *StateManager) Delete(key string) error {
+	key = filepath.ToSlash(key)
+	if key == "" || strings.HasPrefix(key, "/") || key == ".." ||
+		strings.HasPrefix(key, "../") || strings.Contains(key, "/../") {
+		return fmt.Errorf("state: invalid key %q", key)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	target := filepath.FromSlash(key + ".json")
+	entries, err := os.ReadDir(s.root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if e.Name() == "FAILED" {
+			failedDir := filepath.Join(s.root, "FAILED")
+			fEntries, err := os.ReadDir(failedDir)
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return err
+			}
+			for _, fe := range fEntries {
+				if !fe.IsDir() {
+					continue
+				}
+				bucket := filepath.Join(failedDir, fe.Name())
+				s.removeRecord(filepath.Join(bucket, target), bucket)
+			}
+			continue
+		}
+		bucket := filepath.Join(s.root, e.Name())
+		s.removeRecord(filepath.Join(bucket, target), bucket)
+	}
+	return nil
+}
+
+func (s *StateManager) removeRecord(file, stop string) {
+	if err := os.Remove(file); err != nil {
+		if !os.IsNotExist(err) {
+			s.log.Warn("state: delete failed", "path", file, "err", err)
+		}
+		return
+	}
+	removeEmptyParents(file, stop)
+}
+
+func removeEmptyParents(file, stop string) {
+	dir := filepath.Dir(file)
+	for dir != stop && dir != "." && dir != string(filepath.Separator) {
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) > 0 {
+			return
+		}
+		if err := os.Remove(dir); err != nil {
+			return
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return
+		}
+		dir = parent
+	}
 }
 
 func looksLikeDate(s string) bool {

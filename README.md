@@ -187,6 +187,30 @@ sudo systemctl start cloud-sync
 
 ---
 
+### Web UI（可选）
+
+Web UI + JSON API 内嵌在二进制里，默认监听 `:8099`（配置键 `UI_LISTEN` / `ui_listen`；设为空字符串或 `-` 可完全禁用）。浏览器打开：
+
+```
+http://<host>:8099/
+```
+
+三个 Tab：
+
+- **Dashboard**：同步计数（synced / failed / cleaned / unsynced）、OpenList 连通性、运行时长、watch 目录；「Run cleanup now」立即触发一次清理（遵循 `cleanup_dry_run`）。
+- **Files**：按状态筛选 / 搜索 / 分页浏览文件；勾选行（或单行按钮）触发重试——重试会删掉该 key 的状态记录并重新入队，走既有上传状态机。
+- **Config**：编辑 YAML 后「Save & Reload」；保存会原子写回配置文件并热重载（无需重启容器/进程）。右侧只读展示 `/api/status` 里的生效配置。
+
+> **无鉴权**：任何能访问该端口的人都能读取配置（含 token）、修改配置、触发重试。只在可信内网暴露；也可以只映射到 `127.0.0.1`，再通过 SSH 隧道 / 反向代理访问。
+
+注意事项：
+
+- 从 Web UI 保存配置会写入 `/config/cloud-sync.yaml`，所以挂载进去的配置文件必须**可写**（compose 里用 `:rw`，不是 `:ro`）。
+- 改 `ui_listen`（`UI_LISTEN`）需要**重启进程**生效——监听地址在启动时绑定，配置热重载不会换端口。
+- 裸机/systemd 部署时，`ProtectSystem` / `ReadWritePaths` 需允许写配置文件所在目录，否则「Save & Reload」会失败。
+
+---
+
 ## 本地开发/测试
 
 见 [`cloud-sync/README.md`](./cloud-sync/README.md)（开发视角：build / test / 本地 smoke / 配置细节）。
