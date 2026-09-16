@@ -69,9 +69,12 @@ services:
       # 72h. The app-level ALLOWED_SOURCE_PREFIXES whitelist is the actual safety
       # boundary for the cleanup pass.
       - /mnt/basic/media:/mnt/basic/media:rw
-      # Working config. Create it first: `cp config.example.yaml config.yaml`.
-      # Mounted :rw so "Save & Reload" in the Web UI can rewrite it.
-      - ./config.yaml:/config/cloud-sync.yaml:rw
+      # Working config directory. Create it first:
+      #   mkdir -p config && cp config.example.yaml config/cloud-sync.yaml
+      # Mount a directory (not the file): bind-mounting a file that does not
+      # exist yet makes Docker create a *directory* of that name. Mounted :rw so
+      # "Save & Reload" in the Web UI can rewrite config/cloud-sync.yaml.
+      - ./config:/config:rw
     networks:
       - media
 

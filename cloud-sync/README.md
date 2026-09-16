@@ -13,14 +13,17 @@
 1. 如果 `/config/cloud-sync.yaml` **存在**——把里面出现的字段注入进程 env，再走原有 env 解析。文件里**没写**的字段继续走 env，env 也没设的报 required 错误。
 2. 如果 `/config/cloud-sync.yaml` **不存在**——退回纯 env 模式（向后兼容老的 docker-compose 部署）。
 
-字段名与 env 名一一对应（小写下划线 ↔ 大写下划线）。`docker-compose.yml` 默认把仓库根的 `config.yaml` 挂到 `/config/cloud-sync.yaml`，**复制并按需修改即可**：
+字段名与 env 名一一对应（小写下划线 ↔ 大写下划线）。`docker-compose.yml` 默认把仓库根的 `./config` 目录挂到 `/config`，配置放 `config/cloud-sync.yaml`，**复制并按需修改即可**：
 
 ```bash
-cp config.example.yaml /your/deploy/path/cloud-sync/config.yaml
+mkdir -p /your/deploy/path/cloud-sync/config
+cp config.example.yaml /your/deploy/path/cloud-sync/config/cloud-sync.yaml
 # 编辑
-vim /your/deploy/path/cloud-sync/config.yaml
+vim /your/deploy/path/cloud-sync/config/cloud-sync.yaml
 docker compose restart cloud-sync
 ```
+
+> 挂目录而不是挂文件：bind-mount 一个尚不存在的文件时，Docker 会把它建成**目录**，导致容器读到目录而报错。
 
 完整字段说明 + 注释见 `config.example.yaml`。
 
@@ -212,11 +215,12 @@ docker build -t cloud-sync:dev .
 
 ## Run（部署到 TrueNAS）
 
-`docker-compose.yml` 默认**拉发布镜像**（`ghcr.io/devinaille/cloud-sync`，用 `CLOUD_SYNC_TAG` 选版本），并把仓库根的 `config.yaml` 挂到容器的 `/config/cloud-sync.yaml`。**首次部署先复制一份配置再编辑**：
+`docker-compose.yml` 默认**拉发布镜像**（`ghcr.io/devinaille/cloud-sync`，用 `CLOUD_SYNC_TAG` 选版本），并把仓库根的 `./config` 目录挂到容器的 `/config`（配置即 `config/cloud-sync.yaml`）。**首次部署先复制一份配置再编辑**：
 
 ```bash
-cp config.example.yaml config.yaml
-vim config.yaml            # 改 openlist_token、watch_dirs 等
+mkdir -p config
+cp config.example.yaml config/cloud-sync.yaml
+vim config/cloud-sync.yaml   # 改 openlist_token、watch_dirs 等
 
 CLOUD_SYNC_TAG=v0.1.0-rc2 docker compose up -d cloud-sync
 docker compose logs -f cloud-sync

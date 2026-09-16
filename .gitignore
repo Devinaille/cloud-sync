@@ -1,5 +1,5 @@
 .env
-/config.yaml
+/config/
 *.log
 logs/
 .sync_status/

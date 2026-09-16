@@ -23,11 +23,12 @@ cloud-sync 有两种部署方式。两种都支持配置文件模式（推荐）
 #### 1. 准备配置
 
 ```bash
-# 复制配置模板
-cp config.example.yaml config.yaml
+# 复制配置模板到 config/ 目录（compose 挂载的是 ./config 目录）
+mkdir -p config
+cp config.example.yaml config/cloud-sync.yaml
 
 # 编辑真实值
-$EDITOR config.yaml
+$EDITOR config/cloud-sync.yaml
 # 必改项：
 #   openlist_token        (OpenList 后台获取)
 #   watch_dirs            (默认 /mnt/basic/media/media + /mnt/basic/media/ani-rss)
@@ -132,7 +133,7 @@ cp config.example.yaml /etc/cloud-sync/cloud-sync.yaml
 $EDITOR /etc/cloud-sync/cloud-sync.yaml
 ```
 
-确保 `config.yaml` 里的 `watch_*_dir` / `sync_status_dir` 绝对路径在部署机存在并可写。
+确保 `/etc/cloud-sync/cloud-sync.yaml` 里的 `watch_*_dir` / `sync_status_dir` 绝对路径在部署机存在并可写。
 
 #### 3. 跑
 
@@ -198,7 +199,7 @@ sudo install -m 0755 /usr/local/bin/cloud-sync.new /usr/local/bin/cloud-sync
 sudo systemctl start cloud-sync
 ```
 
-`config.yaml` 在 `/etc/cloud-sync/`，独立于二进制。
+`/etc/cloud-sync/cloud-sync.yaml`，独立于二进制。
 
 ---
 
@@ -281,7 +282,7 @@ git tag v1.0.0     && git push origin v1.0.0       # 正式版
 **方式 1：跑发布的镜像**（compose 默认即此路径）：
 
 ```bash
-cp config.example.yaml config.yaml   # 编辑成真实配置
+mkdir -p config && cp config.example.yaml config/cloud-sync.yaml   # 编辑成真实配置
 
 # base compose 直接用发布镜像，用 CLOUD_SYNC_TAG 选版本
 CLOUD_SYNC_TAG=v0.1.0-rc2 docker compose up -d cloud-sync
