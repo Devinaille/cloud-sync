@@ -9,7 +9,7 @@
 # Dockerfile build so the pulled image is used.
 #
 # Prerequisites (same as a normal deploy):
-#   - a real, writable ./config.yaml (copy config.example.yaml and edit it)
+#   - a real, writable ./config.yaml (cp config.example.yaml config.yaml, then edit)
 #   - the host media directories referenced by the config exist
 # See README.md → 部署.
 
