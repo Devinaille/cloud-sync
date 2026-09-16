@@ -31,7 +31,7 @@ cloud-sync 有两种部署方式。两种都支持配置文件模式（推荐）
 
 任意一份都可叠加 `docker-compose.build.yml` 从本地源码构建镜像（`-f <base> -f docker-compose.build.yml up -d --build`）。
 
-**运行用户（PUID/PGID）**：镜像默认 `nonroot`（UID 65532）。三份 compose 都用 `user: "${PUID:-65532}:${PGID:-65532}"` 按环境变量切换运行用户；把 `PUID`/`PGID` 设为宿主上拥有 `media`/`config` 目录的用户（可在 `.env` 或 shell 里设置）。该用户必须能写这些挂载目录。
+**运行用户（PUID/PGID）**：三份 compose 都用 `user: "${PUID:-1000}:${PGID:-1000}"` 按环境变量切换运行用户（**默认 1000:1000**；镜像自身默认 `nonroot`=65532，被 compose 覆盖）；把 `PUID`/`PGID` 设为宿主上拥有 `media`/`config` 目录的用户（可在 `.env` 或 shell 里设置）。该用户必须能写这些挂载目录。
 
 #### 1. 准备配置
 
