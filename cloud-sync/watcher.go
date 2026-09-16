@@ -81,18 +81,23 @@ func (w *Watcher) loop() {
 			if err != nil {
 				continue
 			}
+			// A newly created (or moved-in) directory must be watched too,
+			// otherwise files landing in a folder created after startup are
+			// never seen. addRecursive covers nested trees moved in at once;
+			// emitExisting picks up files already inside a moved-in tree.
+			if info.IsDir() {
+				if ev.Op&(fsnotify.Create|fsnotify.Rename) != 0 {
+					if err := w.addRecursive(ev.Name); err != nil {
+						w.log.Warn("watcher: add new dir failed", "path", ev.Name, "err", err)
+					}
+					w.emitExisting(ev.Name)
+				}
+				continue
+			}
 			if !shouldEmit(ev.Name, info.Size(), w.minSize) {
 				continue
 			}
-			select {
-			case w.events <- FileEvent{
-				Path:     ev.Name,
-				Size:     info.Size(),
-				Detected: time.Now(),
-			}:
-			default:
-				w.log.Warn("watcher: events channel full, dropping", "path", ev.Name)
-			}
+			w.pushEvent(ev.Name, info.Size())
 		case err, ok := <-w.fsw.Errors:
 			if !ok {
 				return
@@ -104,6 +109,30 @@ func (w *Watcher) loop() {
 			}
 		}
 	}
+}
+
+// pushEvent non-blockingly enqueues an event, dropping it (with a warning) if
+// the buffer is full so the fsnotify loop never blocks.
+func (w *Watcher) pushEvent(path string, size int64) {
+	select {
+	case w.events <- FileEvent{Path: path, Size: size, Detected: time.Now()}:
+	default:
+		w.log.Warn("watcher: events channel full, dropping", "path", path)
+	}
+}
+
+// emitExisting walks root and emits events for eligible video files already
+// present, so a directory moved in with content is processed without a restart.
+func (w *Watcher) emitExisting(root string) {
+	_ = filepath.Walk(root, func(p string, fi os.FileInfo, err error) error {
+		if err != nil || fi.IsDir() {
+			return nil
+		}
+		if shouldEmit(p, fi.Size(), w.minSize) {
+			w.pushEvent(p, fi.Size())
+		}
+		return nil
+	})
 }
 
 func (w *Watcher) Events() <-chan FileEvent { return w.events }
