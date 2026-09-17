@@ -69,6 +69,7 @@
       "precheck.cloud.unknown": "cloud unknown",
       "files.search": "Search path\u2026",
       "files.retrySelected": "Retry selected",
+      "files.retryFailedAll": "Retry failed",
       "files.retry": "Retry",
       "files.selectAll": "Select all rows",
       "files.select": "Select {key}",
@@ -171,6 +172,7 @@
       "precheck.cloud.unknown": "云盘未知",
       "files.search": "搜索路径\u2026",
       "files.retrySelected": "重试选中",
+      "files.retryFailedAll": "重试所有失败",
       "files.retry": "重试",
       "files.selectAll": "全选",
       "files.select": "选择 {key}",
@@ -528,6 +530,10 @@
     var cleanupBtn = byId("cleanup-btn");
     if (cleanupBtn) {
       cleanupBtn.disabled = !tasksRunning;
+    }
+    var retryFailedBtn = byId("retry-failed");
+    if (retryFailedBtn) {
+      retryFailedBtn.disabled = !tasksRunning;
     }
     updateRetrySelected();
   }
@@ -902,17 +908,17 @@
     });
   }
 
-  async function retryKeys(keys) {
-    keys = (keys || []).filter(Boolean);
-    if (!keys.length) {
-      return;
+  async function doRetry(body) {
+    var selectedBtn = byId("retry-selected");
+    var failedBtn = byId("retry-failed");
+    if (selectedBtn) {
+      selectedBtn.disabled = true;
     }
-    var btn = byId("retry-selected");
-    if (btn) {
-      btn.disabled = true;
+    if (failedBtn) {
+      failedBtn.disabled = true;
     }
     try {
-      var data = await postJSON("/api/retry", { keys: keys });
+      var data = await postJSON("/api/retry", body);
       var results = data && data.results ? data.results : [];
       if (!results.length) {
         toast(t("files.retryNone"), "info");
@@ -943,8 +949,21 @@
     } catch (e) {
       toast(t("files.retryRequestFailed", { e: e.message }), "error");
     } finally {
-      updateRetrySelected();
+      updateControls();
     }
+  }
+
+  function retryKeys(keys) {
+    keys = (keys || []).filter(Boolean);
+    if (!keys.length) {
+      return;
+    }
+    return doRetry({ keys: keys });
+  }
+
+  // Retry every failed record (server-side state batch).
+  function retryFailed() {
+    return doRetry({ state: "failed", all: true });
   }
 
   function retrySelected() {
@@ -1152,6 +1171,11 @@
     var retryBtn = byId("retry-selected");
     if (retryBtn) {
       retryBtn.addEventListener("click", retrySelected);
+    }
+
+    var retryFailedBtn = byId("retry-failed");
+    if (retryFailedBtn) {
+      retryFailedBtn.addEventListener("click", retryFailed);
     }
 
     var cleanupBtn = byId("cleanup-btn");
