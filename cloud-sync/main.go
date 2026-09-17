@@ -21,6 +21,9 @@ func main() {
 	log := Init(cfg.LogLevel, cfg.LogFile)
 	slog.SetDefault(log)
 	log.Info("cloud-sync starting",
+		"version", version,
+		"commit", commit,
+		"build_time", buildTime,
 		"log_level", cfg.LogLevel,
 		"openlist_url", cfg.OpenListURL,
 		"watch_dirs", cfg.WatchDirs,

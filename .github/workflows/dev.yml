@@ -45,13 +45,19 @@ jobs:
           go vet ./...
           go test -race -count=1 ./...
 
-      - name: Short SHA
+      - name: Build metadata
         id: sha
-        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "stamp=$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
+          echo "iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Build (linux/amd64)
         working-directory: cloud-sync
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o cloud-sync .
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+            -ldflags="-s -w -X main.version=dev -X main.commit=${GITHUB_SHA} -X main.buildTime=${{ steps.sha.outputs.iso }}" \
+            -o cloud-sync .
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
@@ -79,7 +85,12 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE }}:dev
+            ${{ env.IMAGE }}:dev-${{ steps.sha.outputs.stamp }}
             ${{ env.IMAGE }}:sha-${{ steps.sha.outputs.short }}-dev
+          build-args: |
+            VERSION=dev
+            COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ steps.sha.outputs.iso }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=dev

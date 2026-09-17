@@ -270,7 +270,8 @@ http://<host>:8099/
 ## 分支与开发流程
 
 - **`dev`** — 开发分支。所有开发在此进行。push 到 `dev` 触发 [`dev.yml`](./.github/workflows/dev.yml)：跑 gofmt/vet/test，构建二进制（上传 artifact），并推送**带 `-dev` 后缀**的镜像：
-  - `ghcr.io/devinaille/cloud-sync:dev`
+  - `ghcr.io/devinaille/cloud-sync:dev`（滚动）
+  - `ghcr.io/devinaille/cloud-sync:dev-<YYYYMMDDHHMMSS>`（带构建时间戳，便于确认是否更新）
   - `ghcr.io/devinaille/cloud-sync:sha-<short>-dev`
 - **`main`** — 发布分支。只有从 `dev` **merge 回 `main`** 后，才在 `main` 上打 tag，触发 rc / release。
 
@@ -298,8 +299,10 @@ git tag v0.1.0-rc2 && git push origin v0.1.0-rc2   # rc（在 main 上打 tag）
 
 | 类型 | tag 形式 | workflow | 说明 |
 |---|---|---|---|
-| 候选版 | `v1.0.0-rc1`（含 `-rc`） | [`rc.yml`](./.github/workflows/rc.yml) | 创建 **pre-release**；镜像只打 `<tag>`，不动 `latest` |
-| 正式版 | `v1.0.0` | [`release.yml`](./.github/workflows/release.yml) | 创建正式 Release；镜像打 `<tag>` 和 `latest` |
+| 候选版 | `v1.0.0-rc1`（含 `-rc`） | [`rc.yml`](./.github/workflows/rc.yml) | 创建 **pre-release**；镜像打 `<tag>` 和 `<tag>-<时间戳>`，不动 `latest` |
+| 正式版 | `v1.0.0` | [`release.yml`](./.github/workflows/release.yml) | 创建正式 Release；镜像打 `<tag>`、`<tag>-<时间戳>` 和 `latest` |
+
+构建时会把 version/commit/build-time 通过 `-ldflags` 打进二进制：启动日志里有 `version/commit/build_time`，Web UI Dashboard 的「版本」也显示，`GET /api/status` 返回 `version`/`commit`/`build_time`——用来确认容器跑的是哪个构建。rc/release 的镜像额外带一个 `-<时间戳>` 后缀 tag（如 `v0.1.0-rc1-20250917023000`），dev 同理（`dev-<时间戳>`）。
 
 发版步骤：
 

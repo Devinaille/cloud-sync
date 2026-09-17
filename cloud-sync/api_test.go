@@ -560,3 +560,26 @@ func TestAPI_Precheck_CloudExists(t *testing.T) {
 		t.Error("Movies/A.mkv not present in /api/files")
 	}
 }
+
+func TestAPI_Status_BuildInfo(t *testing.T) {
+	env := newTestSupervisor(t)
+	srv := env.server(t)
+
+	var body struct {
+		Version   string `json:"version"`
+		Commit    string `json:"commit"`
+		BuildTime string `json:"build_time"`
+	}
+	if code := getJSON(t, srv.URL+"/api/status", &body); code != http.StatusOK {
+		t.Fatalf("status code = %d, want 200", code)
+	}
+	if body.Version == "" {
+		t.Error("version empty in /api/status")
+	}
+	if body.Commit == "" {
+		t.Error("commit empty in /api/status")
+	}
+	if body.BuildTime == "" {
+		t.Error("build_time empty in /api/status")
+	}
+}

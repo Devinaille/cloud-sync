@@ -26,6 +26,9 @@ const (
 type statusResponse struct {
 	OK            bool         `json:"ok"`
 	Error         string       `json:"error,omitempty"`
+	Version       string       `json:"version"`
+	Commit        string       `json:"commit"`
+	BuildTime     string       `json:"build_time"`
 	StartedAt     string       `json:"started_at,omitempty"`
 	UptimeSeconds int64        `json:"uptime_seconds"`
 	OpenListPing  bool         `json:"openlist_ping"`
@@ -456,6 +459,9 @@ func statusPayload(ctx context.Context, sup *Supervisor) statusResponse {
 		return statusResponse{
 			OK:           false,
 			Error:        errMsg,
+			Version:      version,
+			Commit:       commit,
+			BuildTime:    buildTime,
 			Counts:       statusCounts{},
 			TasksEnabled: sup.TasksEnabled(),
 			TasksRunning: sup.TasksRunning(),
@@ -479,6 +485,9 @@ func statusPayload(ctx context.Context, sup *Supervisor) statusResponse {
 
 	resp := statusResponse{
 		OK:            true,
+		Version:       version,
+		Commit:        commit,
+		BuildTime:     buildTime,
 		UptimeSeconds: uptime,
 		OpenListPing:  pingOK,
 		TasksEnabled:  sup.TasksEnabled(),

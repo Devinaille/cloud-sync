@@ -38,6 +38,7 @@
       "health.uptime": "Uptime",
       "health.started": "Started",
       "health.uilisten": "UI listen",
+      "health.version": "Version",
       "watch.title": "Watch directories",
       "watch.none": "No watch directories configured.",
       "maint.title": "Maintenance",
@@ -141,6 +142,7 @@
       "health.uptime": "运行时长",
       "health.started": "启动时间",
       "health.uilisten": "UI 监听",
+      "health.version": "版本",
       "watch.title": "监听目录",
       "watch.none": "未配置监听目录。",
       "maint.title": "维护",
@@ -488,6 +490,12 @@
 
     setText("uptime", formatUptime(st.uptime_seconds));
     setText("started-at", formatTime(st.started_at));
+
+    var build = st.version || "\u2013";
+    if (st.build_time) {
+      build += "  (" + st.build_time + ")";
+    }
+    setText("version", build);
 
     var cfg = st.config || {};
     setText("ui-listen", cfg.ui_listen || "\u2013");

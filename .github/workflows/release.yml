@@ -41,7 +41,11 @@ jobs:
 
       - name: Resolve tag
         id: ver
-        run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "stamp=$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
+          echo "iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Ensure tag is on main
         run: |
@@ -68,7 +72,10 @@ jobs:
 
       - name: Build (linux/amd64)
         working-directory: cloud-sync
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o cloud-sync .
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+            -ldflags="-s -w -X main.version=${{ steps.ver.outputs.tag }} -X main.commit=${{ steps.ver.outputs.commit }} -X main.buildTime=${{ steps.ver.outputs.iso }}" \
+            -o cloud-sync .
 
       - name: Package tarball + checksums
         run: |
@@ -104,7 +111,11 @@ jobs:
 
       - name: Resolve tag
         id: ver
-        run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "stamp=$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
+          echo "iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -124,7 +135,12 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE }}:${{ steps.ver.outputs.tag }}
+            ${{ env.IMAGE }}:${{ steps.ver.outputs.tag }}-${{ steps.ver.outputs.stamp }}
             ${{ env.IMAGE }}:latest
+          build-args: |
+            VERSION=${{ steps.ver.outputs.tag }}
+            COMMIT=${{ steps.ver.outputs.commit }}
+            BUILD_TIME=${{ steps.ver.outputs.iso }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ steps.ver.outputs.tag }}
