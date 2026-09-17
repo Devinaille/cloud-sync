@@ -19,7 +19,9 @@
 services:
   cloud-sync:
     image: ghcr.io/devinaille/cloud-sync:${CLOUD_SYNC_TAG:-latest}
-    pull_policy: missing
+    # Always re-check the registry so a moving tag (dev / latest) actually
+    # updates on `up -d`. `missing` would silently keep the locally cached image.
+    pull_policy: always
     container_name: cloud-sync
     restart: unless-stopped
     user: "${PUID:-1000}:${PGID:-1000}"
