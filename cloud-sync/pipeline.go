@@ -65,18 +65,13 @@ func (p *Pipeline) Run(ctx context.Context, events <-chan FileEvent) {
 func (p *Pipeline) Process(ctx context.Context, ev FileEvent) { p.process(ctx, ev) }
 
 func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
-	// 1. stabilize: wait until the file stops changing.
-	if err := stabilize(ctx, ev.Path, p.cfg.StabilizeWait); err != nil {
-		p.log.Info("pipeline: stabilize timeout, skipping", "path", ev.Path, "err", err)
-		return
-	}
 	info, err := os.Stat(ev.Path)
 	if err != nil {
 		p.log.Warn("pipeline: stat failed", "path", ev.Path, "err", err)
 		return
 	}
 
-	// 2. validate: whitelist + minimum size.
+	// validate: whitelist + minimum size.
 	if !whitelisted(ev.Path, p.cfg.AllowedPrefixes) {
 		p.log.Warn("pipeline: path not whitelisted", "path", ev.Path)
 		return
@@ -86,15 +81,15 @@ func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
 		return
 	}
 
-	// 3. compute key (rel-path under source root) and src/dst names for OpenList.
+	// compute key (rel-path under source root) and src/dst names for OpenList.
 	key, srcDir, srcName, dstDir, dstName := p.computeKey(ev.Path)
 	if key == "" {
 		return
 	}
 	// Per-key in-flight guard: prevent duplicate concurrent uploads for the
-	// same file. AlreadySynced below is racy when concurrency > 1 because
-	// both events can pass the check before either writes a record. The
-	// inflight set is the race-free dedup primitive.
+	// same file. The AlreadySynced check below is racy when concurrency > 1
+	// because both events can pass the check before either writes a record.
+	// The inflight set is the race-free dedup primitive.
 	p.inflightMu.Lock()
 	if _, dup := p.inflight[key]; dup {
 		p.inflightMu.Unlock()
@@ -109,6 +104,9 @@ func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
 		p.inflightMu.Unlock()
 	}()
 
+	// Skip already-synced files BEFORE stabilizing. On restart the startup scan
+	// re-walks every file; a file with a record must not wait the full
+	// stabilize window again (that made restarts look like a full re-scan).
 	synced, err := p.st.AlreadySynced(key)
 	if err != nil {
 		p.log.Warn("pipeline: AlreadySynced check failed", "key", key, "err", err)
@@ -118,7 +116,16 @@ func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
 		return
 	}
 
-	// 4. acquire semaphore.
+	// stabilize: wait until the file stops changing (only for files we upload).
+	if err := stabilize(ctx, ev.Path, p.cfg.StabilizeWait); err != nil {
+		p.log.Info("pipeline: stabilize timeout, skipping", "path", ev.Path, "err", err)
+		return
+	}
+	if fi, err := os.Stat(ev.Path); err == nil {
+		info = fi
+	}
+
+	// acquire semaphore.
 	select {
 	case p.sem <- struct{}{}:
 	case <-ctx.Done():
@@ -126,7 +133,7 @@ func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
 	}
 	defer func() { <-p.sem }()
 
-	// 5. upload with retry.
+	// upload with retry.
 	if err := p.uploadWithRetry(ctx, key, ev.Path, srcDir, srcName, dstDir, dstName, info); err != nil {
 		p.log.Error("pipeline: upload failed", "key", key, "err", err)
 		// Only persist a "failed" record when the parent context is still
@@ -342,7 +349,8 @@ func (p *Pipeline) writeFailed(key, absPath string, info os.FileInfo, cause erro
 // pipeline has consumed the watcher channel.
 func (p *Pipeline) StartupScan(ctx context.Context) error {
 	var wg sync.WaitGroup
-	count := 0
+	queued := 0
+	skipped := 0
 	for _, root := range p.cfg.WatchDirs {
 		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
@@ -354,8 +362,16 @@ func (p *Pipeline) StartupScan(ctx context.Context) error {
 			if !shouldEmit(path, info.Size(), p.cfg.MinFileSize) {
 				return nil
 			}
+			// Skip files that already have a sync record so a restart only
+			// processes what is genuinely new.
+			if key, _, _, _, _ := p.computeKey(path); key != "" {
+				if synced, err := p.st.AlreadySynced(key); err == nil && synced {
+					skipped++
+					return nil
+				}
+			}
 			ev := FileEvent{Path: path, Size: info.Size(), Detected: time.Now()}
-			count++
+			queued++
 			// Process concurrently like the watcher path: each file waits its
 			// own stabilize window in parallel instead of one file per window.
 			// Upload concurrency is still bounded by the semaphore in process().
@@ -372,6 +388,6 @@ func (p *Pipeline) StartupScan(ctx context.Context) error {
 		}
 	}
 	wg.Wait()
-	p.log.Info("startup scan done", "files", count)
+	p.log.Info("startup scan done", "new", queued, "skipped", skipped)
 	return nil
 }

@@ -580,3 +580,33 @@ func TestPipeline_StartupScan_ProcessesMultipleUnsynced(t *testing.T) {
 		}
 	}
 }
+
+// TestPipeline_Process_SkipsSyncedWithoutStabilize guards the ordering fix: an
+// already-synced file must be skipped immediately, not after waiting the whole
+// stabilize window (which made restarts look like a full re-scan).
+func TestPipeline_Process_SkipsSyncedWithoutStabilize(t *testing.T) {
+	p, up, st, mediaDir := newTestPipeline(t)
+	p.cfg.StabilizeWait = 3 * time.Second
+
+	src := filepath.Join(mediaDir, "Movies/Done.mkv")
+	writeVideo(t, mediaDir, "Movies/Done.mkv")
+	now := time.Now().UTC().Truncate(time.Second)
+	if err := st.Write(&StatusRecord{
+		Key: "Movies/Done.mkv", SrcPath: src, SyncedAt: now,
+		CleanupAt: now.Add(time.Hour), Status: "synced",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	p.Process(context.Background(), FileEvent{Path: src, Size: 4096, Detected: time.Now()})
+	if d := time.Since(start); d > time.Second {
+		t.Errorf("Process took %v for an already-synced file; stabilize should be skipped", d)
+	}
+	up.mu.Lock()
+	n := len(up.copyCalls)
+	up.mu.Unlock()
+	if n != 0 {
+		t.Errorf("Copy calls = %d, want 0", n)
+	}
+}

@@ -27,6 +27,7 @@ func main() {
 		"log_level", cfg.LogLevel,
 		"openlist_url", cfg.OpenListURL,
 		"watch_dirs", cfg.WatchDirs,
+		"sync_status_dir", cfg.SyncStatusDir,
 		"concurrency", cfg.UploadConcurrency,
 		"cleanup_dry_run", cfg.CleanupDryRun,
 	)
