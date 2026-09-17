@@ -497,6 +497,12 @@
     }
     setText("version", build);
 
+    var av = byId("app-version");
+    if (av) {
+      av.textContent = st.version || "";
+      av.title = [st.commit, st.build_time].filter(Boolean).join(" \u00b7 ");
+    }
+
     var cfg = st.config || {};
     setText("ui-listen", cfg.ui_listen || "\u2013");
     setText("cleanup-mode", cfg.cleanup_dry_run ? t("maint.dryRun") : t("maint.live"));

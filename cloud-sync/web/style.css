@@ -142,6 +142,16 @@ body {
   gap: 0.75rem;
 }
 
+.app-version {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .lang {
   display: inline-flex;
   border: 1px solid var(--border);
