@@ -105,6 +105,9 @@ func (s *Supervisor) Start(ctx context.Context) error {
 		s.mu.Lock()
 		s.state = st
 		s.lastErr = ""
+		if s.started.IsZero() {
+			s.started = time.Now()
+		}
 		s.mu.Unlock()
 		log.Info("tasks disabled; watcher/pipeline/cleanup not started (enable from the Web UI or TASKS_ENABLED)")
 		return nil

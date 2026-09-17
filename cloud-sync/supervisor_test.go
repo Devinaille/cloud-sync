@@ -133,6 +133,11 @@ func TestSupervisor_TasksDisabledByDefault(t *testing.T) {
 	if _, _, _, ok := sup.Snapshot(); !ok {
 		t.Error("Snapshot ok = false; state should be available while paused")
 	}
+	// StartedAt tracks process start even when tasks are off (so the UI does
+	// not show a zero timestamp).
+	if sup.StartedAt().IsZero() {
+		t.Error("StartedAt is zero when tasks are disabled")
+	}
 	sup.Stop()
 }
 

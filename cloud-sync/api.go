@@ -65,6 +65,9 @@ type fileItem struct {
 	CleanupAt  string `json:"cleanup_at"`
 	RetryCount int    `json:"retry_count"`
 	Error      string `json:"error"`
+	// Cloud is the pre-check's cloud-existence result for this file:
+	// "exists" | "missing" | "unknown" | "" (not checked yet).
+	Cloud string `json:"cloud"`
 }
 
 type filesResponse struct {
@@ -176,6 +179,7 @@ func (w *WebServer) handleFiles(rw http.ResponseWriter, r *http.Request) {
 		writeError(rw, http.StatusInternalServerError, err.Error())
 		return
 	}
+	applyCloudStatus(cfg, items)
 
 	filtered := filterItems(items, state, q.Get("q"))
 	sort.Slice(filtered, func(i, j int) bool { return filtered[i].Key < filtered[j].Key })
@@ -475,7 +479,6 @@ func statusPayload(ctx context.Context, sup *Supervisor) statusResponse {
 
 	resp := statusResponse{
 		OK:            true,
-		StartedAt:     started.UTC().Format(time.RFC3339),
 		UptimeSeconds: uptime,
 		OpenListPing:  pingOK,
 		TasksEnabled:  sup.TasksEnabled(),
@@ -489,6 +492,9 @@ func statusPayload(ctx context.Context, sup *Supervisor) statusResponse {
 			UIListen:          cfg.UIListen,
 			TasksEnabled:      sup.TasksEnabled(),
 		},
+	}
+	if !started.IsZero() {
+		resp.StartedAt = started.UTC().Format(time.RFC3339)
 	}
 
 	records, err := listRecords(st)
@@ -708,6 +714,43 @@ func writePrecheck(dir string, rep *precheckReport) error {
 		return err
 	}
 	return os.Rename(tmp, filepath.Join(dir, precheckFileName))
+}
+
+// readPrecheck loads the persisted pre-check report, or (nil, nil) when none.
+func readPrecheck(dir string) (*precheckReport, error) {
+	data, err := os.ReadFile(filepath.Join(dir, precheckFileName))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var rep precheckReport
+	if err := json.Unmarshal(data, &rep); err != nil {
+		return nil, err
+	}
+	return &rep, nil
+}
+
+// applyCloudStatus fills each item's Cloud field: synced records are known to
+// exist on the cloud; other files use the last pre-check's result when present.
+func applyCloudStatus(cfg *Config, items []fileItem) {
+	byKey := map[string]string{}
+	if rep, err := readPrecheck(cfg.SyncStatusDir); err == nil && rep != nil {
+		for _, c := range rep.Candidates {
+			byKey[c.Key] = c.Cloud
+		}
+	}
+	for i := range items {
+		switch {
+		case items[i].State == "synced":
+			items[i].Cloud = "exists"
+		case byKey[items[i].Key] != "":
+			items[i].Cloud = byKey[items[i].Key]
+		default:
+			items[i].Cloud = ""
+		}
+	}
 }
 
 // keyForPath returns the slash-separated path relative to whichever watch root

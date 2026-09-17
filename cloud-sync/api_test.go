@@ -543,4 +543,20 @@ func TestAPI_Precheck_CloudExists(t *testing.T) {
 		t.Errorf("cloud totals: checked=%v exists=%d missing=%d, want true/1/0",
 			rep.CloudChecked, rep.CloudExists, rep.CloudMissing)
 	}
+
+	// /api/files must reflect the pre-check result in each item's Cloud field.
+	var files filesResponse
+	getJSON(t, srv.URL+"/api/files?state=all", &files)
+	found := false
+	for _, it := range files.Items {
+		if it.Key == "Movies/A.mkv" {
+			found = true
+			if it.Cloud != "exists" {
+				t.Errorf("file cloud = %q, want exists", it.Cloud)
+			}
+		}
+	}
+	if !found {
+		t.Error("Movies/A.mkv not present in /api/files")
+	}
 }

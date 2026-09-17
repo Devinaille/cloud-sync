@@ -84,6 +84,7 @@
       "th.path": "Path",
       "th.size": "Size",
       "th.state": "State",
+      "th.cloudStatus": "Cloud",
       "th.cloud": "Cloud path",
       "th.syncedAt": "Synced at",
       "th.cleanupAt": "Cleanup at",
@@ -185,6 +186,7 @@
       "th.path": "路径",
       "th.size": "大小",
       "th.state": "状态",
+      "th.cloudStatus": "云盘",
       "th.cloud": "云盘路径",
       "th.syncedAt": "同步时间",
       "th.cleanupAt": "清理时间",
@@ -697,10 +699,14 @@
       toast(
         t("precheck.summary", {
           n: rep.candidates_total || 0,
+          exists: rep.cloud_exists || 0,
+          missing: rep.cloud_missing || 0,
           size: formatBytes(rep.candidates_bytes || 0),
         }),
         "success"
       );
+      // Refresh the Files list so the Cloud column reflects the new results.
+      await loadFiles();
     } catch (e) {
       toast(t("precheck.failed", { e: e.message }), "error");
       await loadPrecheck();
@@ -759,6 +765,17 @@
     stateCell.appendChild(stateBadge(item.state));
     tr.appendChild(stateCell);
 
+    var cloudStatusCell = el("td");
+    if (item.cloud) {
+      var cloudCls = item.cloud === "exists" ? "ok" : item.cloud === "missing" ? "down" : "";
+      cloudStatusCell.appendChild(
+        el("span", "badge " + cloudCls, t("precheck.cloud." + item.cloud))
+      );
+    } else {
+      cloudStatusCell.appendChild(el("span", "muted", "\u2013"));
+    }
+    tr.appendChild(cloudStatusCell);
+
     var cloudCell = el("td", "cell-path");
     cloudCell.appendChild(el("span", "path muted", item.cloud_path || "\u2013"));
     tr.appendChild(cloudCell);
@@ -799,7 +816,7 @@
     if (!items.length) {
       var emptyRow = el("tr");
       var emptyCell = el("td", "empty", t("files.empty"));
-      emptyCell.colSpan = 9;
+      emptyCell.colSpan = 10;
       emptyRow.appendChild(emptyCell);
       body.appendChild(emptyRow);
     } else {
