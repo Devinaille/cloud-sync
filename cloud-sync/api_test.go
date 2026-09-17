@@ -381,6 +381,70 @@ func TestAPI_Retry_DeletesAndEnqueues(t *testing.T) {
 	}
 }
 
+func TestAPI_Retry_WhilePaused(t *testing.T) {
+	env := newTestSupervisor(t)
+	_, st, _, ok := env.sup.Snapshot()
+	if !ok {
+		t.Fatal("no active generation")
+	}
+	srv := env.server(t)
+
+	// Pause first so the retry must use the supervisor's one-off path.
+	if code := doJSON(t, http.MethodPost, srv.URL+"/api/tasks", map[string]bool{"enabled": false}, nil); code != http.StatusOK {
+		t.Fatalf("pause code = %d, want 200", code)
+	}
+
+	sub := filepath.Join(env.watch, "Movies")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(sub, "P.mkv")
+	if err := os.WriteFile(src, make([]byte, 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	key := "Movies/P.mkv"
+	now := time.Now().UTC().Truncate(time.Second)
+	if err := st.Write(&StatusRecord{
+		Key: key, SrcPath: src, SrcSize: 4096,
+		SyncedAt: now, CleanupAt: now.Add(72 * time.Hour), Status: "failed",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var resp struct {
+		Results []retryResult `json:"results"`
+	}
+	if code := doJSON(t, http.MethodPost, srv.URL+"/api/retry", map[string]any{"keys": []string{key}}, &resp); code != http.StatusOK {
+		t.Fatalf("retry while paused = %d, want 200", code)
+	}
+	if len(resp.Results) != 1 || !resp.Results[0].OK {
+		t.Fatalf("retry results = %+v, want one ok", resp.Results)
+	}
+
+	// The one-off pipeline uploads and writes a fresh "synced" record without
+	// tasks ever being started; Stop (t.Cleanup) drains it before temp dirs go.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		recs, err := st.ListAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		synced := false
+		for _, rec := range recs {
+			if rec.Key == key && rec.Status == "synced" {
+				synced = true
+			}
+		}
+		if synced {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("paused retry did not write a synced record")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestAPI_CleanupRun(t *testing.T) {
 	env := newTestSupervisor(t)
 	_, st, _, ok := env.sup.Snapshot()
@@ -437,12 +501,13 @@ func TestAPI_Tasks_PauseResumeAndGuards(t *testing.T) {
 		t.Errorf("after pause: enabled=%v running=%v, want false/false", paused.TasksEnabled, paused.TasksRunning)
 	}
 
-	// State-changing operations must be rejected while paused.
-	if code := doJSON(t, http.MethodPost, srv.URL+"/api/retry", map[string]any{"keys": []string{"Movies/X.mkv"}}, nil); code != http.StatusConflict {
-		t.Errorf("retry while paused = %d, want 409", code)
+	// Retry and cleanup run on the one-off path, so they are allowed while
+	// paused (an empty/missing source still returns 200 with per-key results).
+	if code := doJSON(t, http.MethodPost, srv.URL+"/api/retry", map[string]any{"keys": []string{"Movies/X.mkv"}}, nil); code != http.StatusOK {
+		t.Errorf("retry while paused = %d, want 200", code)
 	}
-	if code := doJSON(t, http.MethodPost, srv.URL+"/api/cleanup/run", map[string]any{}, nil); code != http.StatusConflict {
-		t.Errorf("cleanup while paused = %d, want 409", code)
+	if code := doJSON(t, http.MethodPost, srv.URL+"/api/cleanup/run", map[string]any{}, nil); code != http.StatusOK {
+		t.Errorf("cleanup while paused = %d, want 200", code)
 	}
 
 	// Resume.

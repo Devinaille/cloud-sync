@@ -239,7 +239,7 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 
 支持中英文切换（右上角 `EN / 中文`），默认跟随浏览器语言，选择存于 `localStorage`。
 
-**任务开关（默认关闭）**：`tasks_enabled` 默认 `false`——启动后不监听/不上传/不清理，只提供 UI。在 Dashboard 点「启动任务 / Start tasks」即为运行时开启（`POST /api/tasks`）；暂停会停止监听并安全收尾在途上传，状态目录保留，可随时浏览。**上传预检查**（Dashboard → Run pre-check，`POST /api/precheck`）是只读扫描：列出"若启动任务会上传哪些文件"，并对每个候选调用 OpenList `/api/fs/get` 检测**云盘是否已存在该文件**（每项带 `cloud: exists|missing|unknown`，并汇总 `cloud_exists/missing/unknown`；OpenList 不可达时标 `unknown` 且 `cloud_checked=false`），结果写入 `<sync_status_dir>/precheck.json`，暂停时也可用。暂停期间 `retry` / `cleanup/run` 返回 `409`（会改变文件状态的操作被拒绝）。
+**任务开关（默认关闭）**：`tasks_enabled` 默认 `false`——启动后不监听/不上传/不清理，只提供 UI。在 Dashboard 点「启动任务 / Start tasks」即为运行时开启（`POST /api/tasks`）；暂停会停止监听并安全收尾在途上传，状态目录保留，可随时浏览。**上传预检查**（Dashboard → Run pre-check，`POST /api/precheck`）是只读扫描：列出"若启动任务会上传哪些文件"，并对每个候选调用 OpenList `/api/fs/get` 检测**云盘是否已存在该文件**（每项带 `cloud: exists|missing|unknown`，并汇总 `cloud_exists/missing/unknown`；OpenList 不可达时标 `unknown` 且 `cloud_checked=false`），结果写入 `<sync_status_dir>/precheck.json`，暂停时也可用。暂停期间 `retry` / `cleanup/run` **仍然可用**：它们走 supervisor 的一次性执行路径（无 generation 时用当前配置/状态临时构造 pipeline 或 cleanup），不需要先启动任务；正在进行的一次性任务会随进程关闭被取消并等待。暂停时重启任务会把遗漏文件重新扫描补上。
 
 JSON API：
 

@@ -540,14 +540,16 @@
     }
   }
 
+  // Retry and cleanup run on the supervisor's one-off path, so they stay
+  // available while tasks are paused; only the selection gates retry-selected.
   function updateControls() {
     var cleanupBtn = byId("cleanup-btn");
     if (cleanupBtn) {
-      cleanupBtn.disabled = !tasksRunning;
+      cleanupBtn.disabled = false;
     }
     var retryFailedBtn = byId("retry-failed");
     if (retryFailedBtn) {
-      retryFailedBtn.disabled = !tasksRunning;
+      retryFailedBtn.disabled = false;
     }
     updateRetrySelected();
   }
@@ -815,7 +817,6 @@
     var actionCell = el("td", "col-action");
     var retry = el("button", "btn small", t("files.retry"));
     retry.type = "button";
-    retry.disabled = !tasksRunning;
     retry.addEventListener("click", function () {
       retryKeys([item.key]);
     });
@@ -881,7 +882,7 @@
   function updateRetrySelected() {
     var btn = byId("retry-selected");
     if (btn) {
-      btn.disabled = !tasksRunning || selected.size === 0;
+      btn.disabled = selected.size === 0;
     }
   }
 

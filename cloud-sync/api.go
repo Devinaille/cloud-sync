@@ -274,10 +274,6 @@ func (w *WebServer) handleRetry(rw http.ResponseWriter, r *http.Request) {
 		writeError(rw, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if !w.sup.TasksRunning() {
-		writeError(rw, http.StatusConflict, "tasks are paused; start tasks before retrying")
-		return
-	}
 	cfg, st, _, ok := w.sup.Snapshot()
 	if !ok {
 		writeError(rw, http.StatusServiceUnavailable, "supervisor not running")
@@ -352,10 +348,11 @@ func (w *WebServer) handleRetry(rw http.ResponseWriter, r *http.Request) {
 		if size == 0 {
 			size = info.Size()
 		}
-		// Enqueue on the supervisor so the upload is tracked by the generation
-		// WaitGroup and cancelled on Stop/Reload; a bare goroutine would outlive
-		// the generation and could write state after shutdown.
-		if err := w.sup.Enqueue(FileEvent{Path: src, Size: size, Detected: time.Now()}); err != nil {
+		// ProcessOne tracks the upload by the generation WaitGroup when tasks
+		// run, or runs it on a throwaway pipeline when paused so a retry works
+		// without starting tasks. Either way it is drained on Stop, unlike a
+		// bare goroutine that could write state after shutdown.
+		if err := w.sup.ProcessOne(r.Context(), FileEvent{Path: src, Size: size, Detected: time.Now()}); err != nil {
 			results = append(results, retryResult{Key: key, OK: false, Error: err.Error()})
 			continue
 		}
@@ -367,10 +364,6 @@ func (w *WebServer) handleRetry(rw http.ResponseWriter, r *http.Request) {
 func (w *WebServer) handleCleanupRun(rw http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(rw, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if !w.sup.TasksRunning() {
-		writeError(rw, http.StatusConflict, "tasks are paused; start tasks before running cleanup")
 		return
 	}
 	cl := w.sup.Cleanup()

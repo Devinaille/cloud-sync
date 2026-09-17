@@ -29,8 +29,10 @@ ui_listen: ":8099"
 
 # Task switch. Default false: on startup cloud-sync does NOT watch/upload or
 # clean up until you enable it (Web UI → Dashboard → Start tasks, or set this
-# to true). While paused you can still browse files and run the upload
-# pre-check. Enabling runs a startup scan and one cleanup pass immediately.
+# to true). While paused you can still browse files, run the upload pre-check,
+# and trigger a single-file retry or an on-demand cleanup (they run one-off,
+# without starting the watcher). Enabling runs a startup scan and one cleanup
+# pass immediately.
 tasks_enabled: false
 
 # Watched local directories. All paths must exist. fsnotify recurses into

@@ -52,6 +52,14 @@ type Supervisor struct {
 	// state is created even while paused and rebuilt when SyncStatusDir changes.
 	state *StateManager
 
+	// one-off work (e.g. a single-file retry or cleanup) run while no
+	// generation is active. oneOffMu guards shuttingDown against oneOffWG.Add so
+	// Add never races the Wait in Stop. shuttingDown is set only by Stop (final
+	// shutdown), not by Pause, so retries still work while paused.
+	oneOffMu     sync.Mutex
+	oneOffWG     sync.WaitGroup
+	shuttingDown bool
+
 	// baseCtx is the long-lived application context captured on the first
 	// Start. Generations derive from it (not from per-call contexts) so a
 	// Reload triggered by an HTTP handler cannot cancel the new generation when
@@ -86,6 +94,10 @@ func (s *Supervisor) Start(ctx context.Context) error {
 	}
 	baseCtx := s.baseCtx
 	s.mu.Unlock()
+
+	s.oneOffMu.Lock()
+	s.shuttingDown = false
+	s.oneOffMu.Unlock()
 
 	s.mu.RLock()
 	cfg := s.cfg
@@ -193,14 +205,27 @@ func (s *Supervisor) setLastErr(err error) {
 // Stop cancels the current generation, waits for its goroutines to finish, and
 // closes its watcher. It is a no-op when nothing is running.
 func (s *Supervisor) Stop() {
+	// Mark shutdown before waiting so a concurrent ProcessOne cannot Add after
+	// Wait begins; the same lock makes the Add/Wait pair race-free.
+	s.oneOffMu.Lock()
+	s.shuttingDown = true
+	s.oneOffMu.Unlock()
+
+	s.stopGeneration()
+	// Wait for one-off work started while paused (bounded by upload work).
+	s.oneOffWG.Wait()
+}
+
+// stopGeneration detaches and stops the current generation without touching
+// one-off tracking. Pause uses it so in-flight paused retries are not blocked.
+func (s *Supervisor) stopGeneration() {
 	s.mu.Lock()
 	g := s.gen
 	s.gen = nil
 	s.mu.Unlock()
-	if g == nil {
-		return
+	if g != nil {
+		stopGeneration(g)
 	}
-	stopGeneration(g)
 }
 
 // stopGeneration marks g stopped (so Enqueue stops admitting work), cancels its
@@ -316,12 +341,13 @@ func (s *Supervisor) TasksRunning() bool {
 
 // Pause stops the running tasks (watcher/pipeline/cleanup) while keeping the
 // Web UI and state manager available. In-flight uploads finish or are safely
-// interrupted (ctx cancel writes no failed record). It is idempotent.
+// interrupted (ctx cancel writes no failed record). One-off retries/cleanups
+// started while paused keep running. It is idempotent.
 func (s *Supervisor) Pause() {
 	s.mu.Lock()
 	s.enabled = false
 	s.mu.Unlock()
-	s.Stop()
+	s.stopGeneration()
 }
 
 // Resume starts tasks from the current config. It re-runs StartupScan, so any
@@ -424,15 +450,66 @@ func (s *Supervisor) CloudExists(ctx context.Context, path string) (bool, error)
 	return false, errors.New("uploader does not support cloud existence checks")
 }
 
-// Cleanup returns the current generation's Cleanup, or nil when no generation
-// is running. The web UI uses it to trigger an on-demand cleanup tick.
+// Cleanup returns a Cleanup the web UI can use to trigger an on-demand tick. It
+// returns the running generation's Cleanup, or a throwaway one built from the
+// current config/state when paused (so cleanup can run without tasks). It
+// returns nil only when the supervisor is not initialized.
 func (s *Supervisor) Cleanup() *Cleanup {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.gen == nil {
+	g := s.gen
+	cfg := s.cfg
+	st := s.state
+	log := s.log
+	s.mu.RUnlock()
+
+	if g != nil {
+		return g.cleanup
+	}
+	if cfg == nil || st == nil {
 		return nil
 	}
-	return s.gen.cleanup
+	return NewCleanup(cfg, log, st)
+}
+
+// ProcessOne runs a single file through the pipeline. When tasks are running it
+// is tracked by the generation (see Enqueue). When paused it builds a throwaway
+// pipeline from the current config/state and runs it, tracked by a
+// supervisor-level WaitGroup so Stop waits for it. This is what lets a
+// single-file retry work without starting tasks. The run uses the long-lived
+// base context, not the caller's, so it is not cancelled when the request ends.
+func (s *Supervisor) ProcessOne(ctx context.Context, ev FileEvent) error {
+	s.mu.RLock()
+	g := s.gen
+	cfg := s.cfg
+	st := s.state
+	log := s.log
+	base := s.baseCtx
+	s.mu.RUnlock()
+
+	if g != nil {
+		return s.Enqueue(ev)
+	}
+	if cfg == nil || st == nil {
+		return errors.New("supervisor: not initialized")
+	}
+	if base == nil {
+		base = ctx
+	}
+
+	s.oneOffMu.Lock()
+	if s.shuttingDown {
+		s.oneOffMu.Unlock()
+		return errors.New("supervisor: shutting down")
+	}
+	s.oneOffWG.Add(1)
+	s.oneOffMu.Unlock()
+
+	pl := NewPipeline(cfg, log, s.deps.NewUploader(cfg, log), st)
+	go func() {
+		defer s.oneOffWG.Done()
+		pl.Process(base, ev)
+	}()
+	return nil
 }
 
 // Enqueue runs Process for one event on the current generation, tracked by the
