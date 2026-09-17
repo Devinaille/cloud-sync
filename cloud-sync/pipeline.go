@@ -341,9 +341,9 @@ func (p *Pipeline) writeFailed(key, absPath string, info os.FileInfo, cause erro
 // same per-event process() used by Run(). Runs to completion before the
 // pipeline has consumed the watcher channel.
 func (p *Pipeline) StartupScan(ctx context.Context) error {
-	roots := p.cfg.WatchDirs
+	var wg sync.WaitGroup
 	count := 0
-	for _, root := range roots {
+	for _, root := range p.cfg.WatchDirs {
 		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return nil // skip unreadable
@@ -355,14 +355,23 @@ func (p *Pipeline) StartupScan(ctx context.Context) error {
 				return nil
 			}
 			ev := FileEvent{Path: path, Size: info.Size(), Detected: time.Now()}
-			p.process(ctx, ev)
 			count++
+			// Process concurrently like the watcher path: each file waits its
+			// own stabilize window in parallel instead of one file per window.
+			// Upload concurrency is still bounded by the semaphore in process().
+			wg.Add(1)
+			go func(ev FileEvent) {
+				defer wg.Done()
+				p.process(ctx, ev)
+			}(ev)
 			return nil
 		})
 		if err != nil {
+			wg.Wait()
 			return err
 		}
 	}
+	wg.Wait()
 	p.log.Info("startup scan done", "files", count)
 	return nil
 }

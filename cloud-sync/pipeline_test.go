@@ -553,3 +553,30 @@ func TestPipeline_DedupesConcurrentEventsForSameKey(t *testing.T) {
 		t.Errorf("AlreadySynced = false after dedup; want true")
 	}
 }
+
+// TestPipeline_StartupScan_ProcessesMultipleUnsynced verifies the startup scan
+// feeds every unsynced file through the pipeline (concurrently), not just one.
+func TestPipeline_StartupScan_ProcessesMultipleUnsynced(t *testing.T) {
+	p, up, st, mediaDir := newTestPipeline(t)
+	writeVideo(t, mediaDir, "Movies/A.mkv")
+	writeVideo(t, mediaDir, "Movies/B.mkv")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := p.StartupScan(ctx); err != nil {
+		t.Fatalf("StartupScan: %v", err)
+	}
+
+	up.mu.Lock()
+	n := len(up.copyCalls)
+	up.mu.Unlock()
+	if n != 2 {
+		t.Errorf("Copy calls = %d, want 2", n)
+	}
+	for _, key := range []string{"Movies/A.mkv", "Movies/B.mkv"} {
+		ok, _ := st.AlreadySynced(key)
+		if !ok {
+			t.Errorf("AlreadySynced(%q) = false, want true", key)
+		}
+	}
+}
