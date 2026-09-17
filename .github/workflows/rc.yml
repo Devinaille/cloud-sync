@@ -34,10 +34,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
 
       - name: Resolve tag
         id: ver
         run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure tag is on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::${{ steps.ver.outputs.tag }} is not on main; cut rc/release from main after merging dev"
+            exit 1
+          fi
 
       - name: Set up Go
         uses: actions/setup-go@v5

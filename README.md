@@ -267,9 +267,31 @@ http://<host>:8099/
 
 详见 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)。
 
+## 分支与开发流程
+
+- **`dev`** — 开发分支。所有开发在此进行。push 到 `dev` 触发 [`dev.yml`](./.github/workflows/dev.yml)：跑 gofmt/vet/test，构建二进制（上传 artifact），并推送**带 `-dev` 后缀**的镜像：
+  - `ghcr.io/devinaille/cloud-sync:dev`
+  - `ghcr.io/devinaille/cloud-sync:sha-<short>-dev`
+- **`main`** — 发布分支。只有从 `dev` **merge 回 `main`** 后，才在 `main` 上打 tag，触发 rc / release。
+
+本地开发（示例）：
+
+```bash
+git checkout dev
+# ... 开发、提交 ...
+git push origin dev                 # 触发 dev 镜像
+
+git checkout main
+git merge --no-ff dev
+git push origin main                # 合并回 main
+git tag v0.1.0-rc2 && git push origin v0.1.0-rc2   # rc（在 main 上打 tag）
+```
+
+> rc/release workflow 会校验 tag 的提交**必须在 `main` 上**（`git merge-base --is-ancestor`）；在 `dev` 的提交上打 tag 会直接失败。这样保证只有合并回 `main` 才发布 rc/release。
+
 ## 发布（rc / release）
 
-打 tag 触发打包与发布（两个独立 workflow）。发布物：
+在 `main` 上打 tag 触发打包与发布（两个独立 workflow）。发布物：
 
 - **GitHub Release**：`cloud-sync_<tag>_linux_amd64.tar.gz`（含二进制 + README）+ `SHA256SUMS`。
 - **容器镜像**：`ghcr.io/devinaille/cloud-sync:<tag>`（正式版额外打 `:latest`）。
