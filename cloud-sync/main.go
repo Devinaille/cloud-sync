@@ -9,6 +9,7 @@ import (
 
 	"cloud-sync/internal/buildinfo"
 	"cloud-sync/internal/config"
+	"cloud-sync/internal/httpapi"
 	"cloud-sync/internal/logging"
 	"cloud-sync/internal/supervisor"
 )
@@ -47,7 +48,7 @@ func main() {
 	defer sup.Stop()
 
 	if cfg.UIListen != "" && cfg.UIListen != "-" {
-		srv := NewWebServer(sup, log)
+		srv := httpapi.NewWebServer(sup, log)
 		go func() {
 			if err := srv.Serve(ctx, cfg.UIListen); err != nil && ctx.Err() == nil {
 				log.Error("web server stopped", "err", err)
