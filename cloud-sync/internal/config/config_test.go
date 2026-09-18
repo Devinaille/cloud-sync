@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"os"
@@ -444,13 +444,13 @@ ui_listen: ":7000"
 	}
 }
 
-// TestLoad_ExampleConfigParses loads the shipped ../config.example.yaml through
+// TestLoad_ExampleConfigParses loads the shipped config.example.yaml through
 // the same strict decoder Load uses (KnownFields(true)), so a field renamed in
 // fileConfig without updating the example (or vice versa) fails here instead of
 // silently at deploy time. It stops short of Load's os.Stat path checks, which
 // would fail for /mnt/... on a dev box.
 func TestLoad_ExampleConfigParses(t *testing.T) {
-	data, err := os.ReadFile("../config.example.yaml")
+	data, err := os.ReadFile("../../../config.example.yaml")
 	if err != nil {
 		t.Fatalf("read example config: %v", err)
 	}

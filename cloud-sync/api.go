@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"cloud-sync/internal/buildinfo"
+	"cloud-sync/internal/config"
 )
 
 const (
@@ -248,7 +249,7 @@ func (w *WebServer) putConfig(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate by parsing the candidate file before replacing the live config.
-	if _, err := Load(tmpName); err != nil {
+	if _, err := config.Load(tmpName); err != nil {
 		os.Remove(tmpName)
 		writeError(rw, http.StatusBadRequest, err.Error())
 		return
@@ -534,7 +535,7 @@ func listRecords(st *StateManager) ([]*StatusRecord, error) {
 
 // buildFileItems merges persisted records with unsynced files found by walking
 // the watch dirs. Record keys win over unsynced duplicates.
-func buildFileItems(cfg *Config, st *StateManager, records []*StatusRecord) ([]fileItem, error) {
+func buildFileItems(cfg *config.Config, st *StateManager, records []*StatusRecord) ([]fileItem, error) {
 	items := make([]fileItem, 0, len(records))
 	seen := make(map[string]struct{}, len(records))
 	for _, rec := range records {
@@ -576,7 +577,7 @@ func recordToItem(rec *StatusRecord) fileItem {
 // unsyncedFiles walks every watch dir for video files that pass shouldEmit and
 // have no record yet. Returned records carry Key/SrcPath/SrcSize and a
 // synthetic "unsynced" status.
-func unsyncedFiles(cfg *Config, st *StateManager) ([]*StatusRecord, error) {
+func unsyncedFiles(cfg *config.Config, st *StateManager) ([]*StatusRecord, error) {
 	var out []*StatusRecord
 	for _, root := range cfg.WatchDirs {
 		err := filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
@@ -621,7 +622,7 @@ func unsyncedFiles(cfg *Config, st *StateManager) ([]*StatusRecord, error) {
 //
 // cloudExists reports cloud-side existence; a transport error marks the
 // candidate "unknown" (and CloudChecked=false) rather than failing the report.
-func runPrecheck(ctx context.Context, cfg *Config, st *StateManager, cloudExists func(context.Context, string) (bool, error)) (*precheckReport, error) {
+func runPrecheck(ctx context.Context, cfg *config.Config, st *StateManager, cloudExists func(context.Context, string) (bool, error)) (*precheckReport, error) {
 	rep := &precheckReport{
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		WatchDirs:   cfg.WatchDirs,
@@ -698,7 +699,7 @@ func runPrecheck(ctx context.Context, cfg *Config, st *StateManager, cloudExists
 
 // cloudPathFor maps a watch-relative key to its OpenList path, mirroring the
 // pipeline's layout: <DstStorage>/media/<rel>.
-func cloudPathFor(cfg *Config, key string) string {
+func cloudPathFor(cfg *config.Config, key string) string {
 	p := cfg.DstStorage + "/media"
 	if parent := path.Dir(key); parent != "." && parent != "" {
 		p += "/" + parent
@@ -738,7 +739,7 @@ func readPrecheck(dir string) (*precheckReport, error) {
 
 // applyCloudStatus fills each item's Cloud field: synced records are known to
 // exist on the cloud; other files use the last pre-check's result when present.
-func applyCloudStatus(cfg *Config, items []fileItem) {
+func applyCloudStatus(cfg *config.Config, items []fileItem) {
 	byKey := map[string]string{}
 	if rep, err := readPrecheck(cfg.SyncStatusDir); err == nil && rep != nil {
 		for _, c := range rep.Candidates {

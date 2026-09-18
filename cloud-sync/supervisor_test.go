@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cloud-sync/internal/config"
 	"context"
 	"fmt"
 	"io"
@@ -16,12 +17,12 @@ func supervisorTestLogger() *slog.Logger {
 	return slog.New(slog.NewJSONHandler(io.Discard, nil))
 }
 
-func mockUploaderFactory() func(cfg *Config, log *slog.Logger) Uploader {
-	return func(cfg *Config, log *slog.Logger) Uploader { return newMockUploader() }
+func mockUploaderFactory() func(cfg *config.Config, log *slog.Logger) Uploader {
+	return func(cfg *config.Config, log *slog.Logger) Uploader { return newMockUploader() }
 }
 
 // supervisorTestCfg builds a Config whose SyncStatusDir and WatchDirs exist.
-func supervisorTestCfg(t *testing.T) *Config {
+func supervisorTestCfg(t *testing.T) *config.Config {
 	t.Helper()
 	dir := t.TempDir()
 	watch := filepath.Join(dir, "media")
@@ -31,7 +32,7 @@ func supervisorTestCfg(t *testing.T) *Config {
 			t.Fatal(err)
 		}
 	}
-	return &Config{
+	return &config.Config{
 		OpenListURL: "http://x", SrcStorage: "/local_media", DstStorage: "/139yun_media",
 		WatchDirs: []string{watch}, SyncStatusDir: syncDir,
 		CleanupAfter: 72 * time.Hour, UploadConcurrency: 2,
@@ -191,7 +192,7 @@ func TestSupervisor_ReloadPreservesPause(t *testing.T) {
 	cfgPath := filepath.Join(dir, "cloud-sync.yaml")
 	writeSupervisorYAML(t, cfgPath, watch, syncDir, 2)
 
-	cfg, err := Load(cfgPath)
+	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -226,7 +227,7 @@ func TestSupervisor_Reload(t *testing.T) {
 	cfgPath := filepath.Join(dir, "cloud-sync.yaml")
 	writeSupervisorYAML(t, cfgPath, watch, syncDir, 2)
 
-	cfg, err := Load(cfgPath)
+	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -303,7 +304,7 @@ func TestSupervisor_PingFailureStillStarts(t *testing.T) {
 	cfg := supervisorTestCfg(t)
 	up := &pingFailUploader{mockUploader: mockUploader{taskStatuses: map[string]TaskStatus{}}}
 	sup := NewSupervisor("", cfg, supervisorTestLogger(), SupervisorDeps{
-		NewUploader: func(c *Config, l *slog.Logger) Uploader { return up },
+		NewUploader: func(c *config.Config, l *slog.Logger) Uploader { return up },
 	})
 
 	if err := sup.Start(context.Background()); err != nil {
@@ -335,7 +336,7 @@ func TestSupervisor_Reload_CtxNotTiedToCallerCtx(t *testing.T) {
 	cfgPath := filepath.Join(dir, "cloud-sync.yaml")
 	writeSupervisorYAML(t, cfgPath, watch, syncDir, 2)
 
-	cfg, err := Load(cfgPath)
+	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -345,7 +346,7 @@ func TestSupervisor_Reload_CtxNotTiedToCallerCtx(t *testing.T) {
 
 	up := newMockUploader()
 	sup := NewSupervisor(cfgPath, cfg, supervisorTestLogger(), SupervisorDeps{
-		NewUploader: func(c *Config, l *slog.Logger) Uploader { return up },
+		NewUploader: func(c *config.Config, l *slog.Logger) Uploader { return up },
 	})
 	if err := sup.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -372,12 +373,12 @@ func TestSupervisor_Reload_CtxNotTiedToCallerCtx(t *testing.T) {
 	if err := os.WriteFile(src, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Truncate(src, minFileSizeBytes+1); err != nil {
+	if err := os.Truncate(src, config.MinFileSizeBytes+1); err != nil {
 		t.Fatal(err)
 	}
 	// The watcher may also notice the file; Enqueue exercises the same pipeline
 	// and its per-key dedup makes a duplicate harmless.
-	if err := sup.Enqueue(FileEvent{Path: src, Size: minFileSizeBytes + 1, Detected: time.Now()}); err != nil {
+	if err := sup.Enqueue(FileEvent{Path: src, Size: config.MinFileSizeBytes + 1, Detected: time.Now()}); err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
 

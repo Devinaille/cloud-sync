@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cloud-sync/internal/config"
 	"context"
 	"encoding/json"
 	"io"
@@ -43,7 +44,7 @@ func newTestSupervisor(t *testing.T) *apiTestEnv {
 	cfgPath := filepath.Join(dir, "cloud-sync.yaml")
 	writeSupervisorYAML(t, cfgPath, watch, syncDir, 2)
 
-	cfg, err := Load(cfgPath)
+	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -54,7 +55,7 @@ func newTestSupervisor(t *testing.T) *apiTestEnv {
 
 	up := newMockUploader()
 	sup := NewSupervisor(cfgPath, cfg, supervisorTestLogger(), SupervisorDeps{
-		NewUploader: func(c *Config, l *slog.Logger) Uploader { return up },
+		NewUploader: func(c *config.Config, l *slog.Logger) Uploader { return up },
 	})
 	if err := sup.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)

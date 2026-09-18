@@ -8,19 +8,20 @@ import (
 	"sync"
 	"time"
 
+	"cloud-sync/internal/config"
 	"cloud-sync/internal/logging"
 )
 
 // SupervisorDeps are the injectable factories the Supervisor uses to build a
 // generation. Tests substitute NewUploader with a mock.
 type SupervisorDeps struct {
-	NewUploader func(cfg *Config, log *slog.Logger) Uploader
+	NewUploader func(cfg *config.Config, log *slog.Logger) Uploader
 }
 
 // Generation is a running set of components built from one config. Its
 // goroutines are tied to a derived context that Stop cancels.
 type Generation struct {
-	cfg      *Config
+	cfg      *config.Config
 	uploader Uploader
 	state    *StateManager
 	watcher  *Watcher
@@ -42,7 +43,7 @@ type Supervisor struct {
 	log     *slog.Logger
 	deps    SupervisorDeps
 	mu      sync.RWMutex
-	cfg     *Config
+	cfg     *config.Config
 	gen     *Generation
 	lastErr string
 	started time.Time
@@ -74,9 +75,9 @@ type Supervisor struct {
 
 // NewSupervisor builds a Supervisor. If deps.NewUploader is nil it defaults to
 // the real OpenList client factory.
-func NewSupervisor(cfgPath string, cfg *Config, log *slog.Logger, deps SupervisorDeps) *Supervisor {
+func NewSupervisor(cfgPath string, cfg *config.Config, log *slog.Logger, deps SupervisorDeps) *Supervisor {
 	if deps.NewUploader == nil {
-		deps.NewUploader = func(cfg *Config, log *slog.Logger) Uploader {
+		deps.NewUploader = func(cfg *config.Config, log *slog.Logger) Uploader {
 			return NewClient(cfg.OpenListURL, cfg.OpenListToken, log)
 		}
 	}
@@ -254,7 +255,7 @@ func (s *Supervisor) Reload(ctx context.Context) error {
 	s.reloadMu.Lock()
 	defer s.reloadMu.Unlock()
 
-	newCfg, err := Load(s.cfgPath)
+	newCfg, err := config.Load(s.cfgPath)
 	if err != nil {
 		s.setLastErr(err)
 		return err
@@ -313,7 +314,7 @@ func (s *Supervisor) Reload(ctx context.Context) error {
 // pipeline when tasks are active. ok is false only when no state has been
 // initialized yet (e.g. a failed initial Start). It is true while paused, so
 // the Web UI can browse files and precheck with tasks stopped.
-func (s *Supervisor) Snapshot() (cfg *Config, st *StateManager, pl *Pipeline, ok bool) {
+func (s *Supervisor) Snapshot() (cfg *config.Config, st *StateManager, pl *Pipeline, ok bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.cfg == nil || s.state == nil {

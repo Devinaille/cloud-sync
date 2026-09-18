@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"cloud-sync/internal/buildinfo"
+	"cloud-sync/internal/config"
 	"cloud-sync/internal/logging"
 )
 
@@ -16,7 +17,7 @@ func main() {
 	if len(os.Args) > 1 {
 		cfgPath = os.Args[1]
 	}
-	cfg, err := Load(cfgPath)
+	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		os.Stderr.WriteString("config error: " + err.Error() + "\n")
 		os.Exit(2)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cloud-sync/internal/config"
 	"context"
 	"fmt"
 	"log/slog"
@@ -17,7 +18,7 @@ type Uploader interface {
 }
 
 type Pipeline struct {
-	cfg *Config
+	cfg *config.Config
 	log *slog.Logger
 	up  Uploader
 	st  *StateManager
@@ -27,7 +28,7 @@ type Pipeline struct {
 	inflight   map[string]struct{}
 }
 
-func NewPipeline(cfg *Config, log *slog.Logger, up Uploader, st *StateManager) *Pipeline {
+func NewPipeline(cfg *config.Config, log *slog.Logger, up Uploader, st *StateManager) *Pipeline {
 	return &Pipeline{
 		cfg:      cfg,
 		log:      log,

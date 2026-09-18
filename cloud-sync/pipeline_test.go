@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cloud-sync/internal/config"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -71,7 +72,7 @@ func newTestPipeline(t *testing.T) (*Pipeline, *mockUploader, *StateManager, str
 		}
 	}
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	cfg := &Config{
+	cfg := &config.Config{
 		OpenListURL: "http://x", SrcStorage: "/local_media", DstStorage: "/139yun_media",
 		WatchDirs: []string{mediaDir, aniDir}, SyncStatusDir: syncDir,
 		CleanupAfter: 72 * time.Hour, UploadConcurrency: 2,
@@ -217,7 +218,7 @@ func TestPipeline_RetriesOnTransientCopyError(t *testing.T) {
 	_ = os.MkdirAll(mediaDir, 0o755)
 	_ = os.MkdirAll(syncDir, 0o755)
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	cfg := &Config{
+	cfg := &config.Config{
 		SrcStorage: "/local_media", DstStorage: "/139yun_media",
 		WatchDirs: []string{mediaDir}, SyncStatusDir: syncDir,
 		UploadConcurrency: 1, StabilizeWait: 50 * time.Millisecond,
@@ -343,7 +344,7 @@ func TestPipeline_NoFailedRecordOnParentCancel(t *testing.T) {
 	_ = os.MkdirAll(mediaDir, 0o755)
 	_ = os.MkdirAll(syncDir, 0o755)
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	cfg := &Config{
+	cfg := &config.Config{
 		SrcStorage: "/local_media", DstStorage: "/139yun_media",
 		WatchDirs: []string{mediaDir}, SyncStatusDir: syncDir,
 		UploadConcurrency: 1, StabilizeWait: 50 * time.Millisecond,
@@ -411,7 +412,7 @@ func TestPipeline_RetryExhaustionNoTrailingSleep(t *testing.T) {
 	_ = os.MkdirAll(mediaDir, 0o755)
 	_ = os.MkdirAll(syncDir, 0o755)
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	cfg := &Config{
+	cfg := &config.Config{
 		SrcStorage: "/local_media", DstStorage: "/139yun_media",
 		WatchDirs: []string{mediaDir}, SyncStatusDir: syncDir,
 		UploadConcurrency: 1, StabilizeWait: 50 * time.Millisecond,
@@ -499,7 +500,7 @@ func TestPipeline_DedupesConcurrentEventsForSameKey(t *testing.T) {
 	_ = os.MkdirAll(mediaDir, 0o755)
 	_ = os.MkdirAll(syncDir, 0o755)
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	cfg := &Config{
+	cfg := &config.Config{
 		SrcStorage: "/local_media", DstStorage: "/139yun_media",
 		WatchDirs: []string{mediaDir}, SyncStatusDir: syncDir,
 		UploadConcurrency: 2,
