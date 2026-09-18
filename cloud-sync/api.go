@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"cloud-sync/internal/buildinfo"
 )
 
 const (
@@ -452,9 +454,9 @@ func statusPayload(ctx context.Context, sup *Supervisor) statusResponse {
 		return statusResponse{
 			OK:           false,
 			Error:        errMsg,
-			Version:      version,
-			Commit:       commit,
-			BuildTime:    buildTime,
+			Version:      buildinfo.Version,
+			Commit:       buildinfo.Commit,
+			BuildTime:    buildinfo.BuildTime,
 			Counts:       statusCounts{},
 			TasksEnabled: sup.TasksEnabled(),
 			TasksRunning: sup.TasksRunning(),
@@ -478,9 +480,9 @@ func statusPayload(ctx context.Context, sup *Supervisor) statusResponse {
 
 	resp := statusResponse{
 		OK:            true,
-		Version:       version,
-		Commit:        commit,
-		BuildTime:     buildTime,
+		Version:       buildinfo.Version,
+		Commit:        buildinfo.Commit,
+		BuildTime:     buildinfo.BuildTime,
 		UptimeSeconds: uptime,
 		OpenListPing:  pingOK,
 		TasksEnabled:  sup.TasksEnabled(),

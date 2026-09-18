@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"cloud-sync/internal/buildinfo"
 )
 
 func main() {
@@ -21,9 +23,9 @@ func main() {
 	log := Init(cfg.LogLevel, cfg.LogFile)
 	slog.SetDefault(log)
 	log.Info("cloud-sync starting",
-		"version", version,
-		"commit", commit,
-		"build_time", buildTime,
+		"version", buildinfo.Version,
+		"commit", buildinfo.Commit,
+		"build_time", buildinfo.BuildTime,
 		"log_level", cfg.LogLevel,
 		"openlist_url", cfg.OpenListURL,
 		"watch_dirs", cfg.WatchDirs,
