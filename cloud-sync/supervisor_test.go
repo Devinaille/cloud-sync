@@ -12,12 +12,13 @@ import (
 	"cloud-sync/internal/config"
 	"cloud-sync/internal/mockopenlist"
 	"cloud-sync/internal/openlist"
+	"cloud-sync/internal/pipeline"
 	"cloud-sync/internal/testutil"
 	"cloud-sync/internal/watcher"
 )
 
-func mockUploaderFactory() func(cfg *config.Config, log *slog.Logger) Uploader {
-	return func(cfg *config.Config, log *slog.Logger) Uploader { return mockopenlist.New() }
+func mockUploaderFactory() func(cfg *config.Config, log *slog.Logger) pipeline.Uploader {
+	return func(cfg *config.Config, log *slog.Logger) pipeline.Uploader { return mockopenlist.New() }
 }
 
 func TestSupervisor_StartStop(t *testing.T) {
@@ -240,7 +241,7 @@ func TestSupervisor_PingFailureStillStarts(t *testing.T) {
 	cfg := testutil.TestConfig(t)
 	up := &pingFailUploader{Uploader: mockopenlist.Uploader{TaskStatuses: map[string]openlist.TaskStatus{}}}
 	sup := NewSupervisor("", cfg, testutil.TestLogger(), SupervisorDeps{
-		NewUploader: func(c *config.Config, l *slog.Logger) Uploader { return up },
+		NewUploader: func(c *config.Config, l *slog.Logger) pipeline.Uploader { return up },
 	})
 
 	if err := sup.Start(context.Background()); err != nil {
@@ -282,7 +283,7 @@ func TestSupervisor_Reload_CtxNotTiedToCallerCtx(t *testing.T) {
 
 	up := mockopenlist.New()
 	sup := NewSupervisor(cfgPath, cfg, testutil.TestLogger(), SupervisorDeps{
-		NewUploader: func(c *config.Config, l *slog.Logger) Uploader { return up },
+		NewUploader: func(c *config.Config, l *slog.Logger) pipeline.Uploader { return up },
 	})
 	if err := sup.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)

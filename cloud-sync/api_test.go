@@ -16,6 +16,7 @@ import (
 
 	"cloud-sync/internal/config"
 	"cloud-sync/internal/mockopenlist"
+	"cloud-sync/internal/pipeline"
 	"cloud-sync/internal/state"
 	"cloud-sync/internal/testutil"
 )
@@ -59,7 +60,7 @@ func newTestSupervisor(t *testing.T) *apiTestEnv {
 
 	up := mockopenlist.New()
 	sup := NewSupervisor(cfgPath, cfg, testutil.TestLogger(), SupervisorDeps{
-		NewUploader: func(c *config.Config, l *slog.Logger) Uploader { return up },
+		NewUploader: func(c *config.Config, l *slog.Logger) pipeline.Uploader { return up },
 	})
 	if err := sup.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)

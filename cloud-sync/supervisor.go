@@ -11,6 +11,7 @@ import (
 	"cloud-sync/internal/config"
 	"cloud-sync/internal/logging"
 	"cloud-sync/internal/openlist"
+	"cloud-sync/internal/pipeline"
 	"cloud-sync/internal/state"
 	"cloud-sync/internal/watcher"
 )
@@ -18,17 +19,17 @@ import (
 // SupervisorDeps are the injectable factories the Supervisor uses to build a
 // generation. Tests substitute NewUploader with a mock.
 type SupervisorDeps struct {
-	NewUploader func(cfg *config.Config, log *slog.Logger) Uploader
+	NewUploader func(cfg *config.Config, log *slog.Logger) pipeline.Uploader
 }
 
 // Generation is a running set of components built from one config. Its
 // goroutines are tied to a derived context that Stop cancels.
 type Generation struct {
 	cfg      *config.Config
-	uploader Uploader
+	uploader pipeline.Uploader
 	state    *state.StateManager
 	watcher  *watcher.Watcher
-	pipeline *Pipeline
+	pipeline *pipeline.Pipeline
 	cleanup  *Cleanup
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -80,7 +81,7 @@ type Supervisor struct {
 // the real OpenList client factory.
 func NewSupervisor(cfgPath string, cfg *config.Config, log *slog.Logger, deps SupervisorDeps) *Supervisor {
 	if deps.NewUploader == nil {
-		deps.NewUploader = func(cfg *config.Config, log *slog.Logger) Uploader {
+		deps.NewUploader = func(cfg *config.Config, log *slog.Logger) pipeline.Uploader {
 			return openlist.NewClient(cfg.OpenListURL, cfg.OpenListToken, log)
 		}
 	}
@@ -144,7 +145,7 @@ func (s *Supervisor) Start(ctx context.Context) error {
 		s.setLastErr(err)
 		return err
 	}
-	pl := NewPipeline(cfg, log, up, st)
+	pl := pipeline.NewPipeline(cfg, log, up, st)
 	cl := NewCleanup(cfg, log, st)
 
 	genCtx, cancel := context.WithCancel(baseCtx)
@@ -317,13 +318,13 @@ func (s *Supervisor) Reload(ctx context.Context) error {
 // pipeline when tasks are active. ok is false only when no state has been
 // initialized yet (e.g. a failed initial Start). It is true while paused, so
 // the Web UI can browse files and precheck with tasks stopped.
-func (s *Supervisor) Snapshot() (cfg *config.Config, st *state.StateManager, pl *Pipeline, ok bool) {
+func (s *Supervisor) Snapshot() (cfg *config.Config, st *state.StateManager, pl *pipeline.Pipeline, ok bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.cfg == nil || s.state == nil {
 		return nil, nil, nil, false
 	}
-	var p *Pipeline
+	var p *pipeline.Pipeline
 	if s.gen != nil {
 		p = s.gen.pipeline
 	}
@@ -414,7 +415,7 @@ func (s *Supervisor) Ping(ctx context.Context) error {
 	log := s.log
 	s.mu.RUnlock()
 
-	var up Uploader
+	var up pipeline.Uploader
 	if g != nil {
 		up = g.uploader
 	} else if cfg != nil {
@@ -439,7 +440,7 @@ func (s *Supervisor) CloudExists(ctx context.Context, path string) (bool, error)
 	log := s.log
 	s.mu.RUnlock()
 
-	var up Uploader
+	var up pipeline.Uploader
 	if g != nil {
 		up = g.uploader
 	} else if cfg != nil {
@@ -510,7 +511,7 @@ func (s *Supervisor) ProcessOne(ctx context.Context, ev watcher.FileEvent) error
 	s.oneOffWG.Add(1)
 	s.oneOffMu.Unlock()
 
-	pl := NewPipeline(cfg, log, s.deps.NewUploader(cfg, log), st)
+	pl := pipeline.NewPipeline(cfg, log, s.deps.NewUploader(cfg, log), st)
 	go func() {
 		defer s.oneOffWG.Done()
 		pl.Process(base, ev)
