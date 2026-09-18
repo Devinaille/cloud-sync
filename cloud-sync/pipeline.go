@@ -3,6 +3,7 @@ package main
 import (
 	"cloud-sync/internal/config"
 	"cloud-sync/internal/openlist"
+	"cloud-sync/internal/state"
 	"context"
 	"fmt"
 	"log/slog"
@@ -22,14 +23,14 @@ type Pipeline struct {
 	cfg *config.Config
 	log *slog.Logger
 	up  Uploader
-	st  *StateManager
+	st  *state.StateManager
 	sem chan struct{}
 
 	inflightMu sync.Mutex
 	inflight   map[string]struct{}
 }
 
-func NewPipeline(cfg *config.Config, log *slog.Logger, up Uploader, st *StateManager) *Pipeline {
+func NewPipeline(cfg *config.Config, log *slog.Logger, up Uploader, st *state.StateManager) *Pipeline {
 	return &Pipeline{
 		cfg:      cfg,
 		log:      log,
@@ -235,7 +236,7 @@ func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcDir, sr
 			case openlist.TaskSucceeded:
 				cancel()
 				now := time.Now().UTC()
-				rec := &StatusRecord{
+				rec := &state.StatusRecord{
 					Key:            key,
 					SrcPath:        absPath,
 					SrcSize:        info.Size(),
@@ -331,7 +332,7 @@ func whitelisted(path string, prefixes []string) bool {
 
 func (p *Pipeline) writeFailed(key, absPath string, info os.FileInfo, cause error) {
 	now := time.Now().UTC()
-	rec := &StatusRecord{
+	rec := &state.StatusRecord{
 		Key:       key,
 		SrcPath:   absPath,
 		SrcSize:   info.Size(),

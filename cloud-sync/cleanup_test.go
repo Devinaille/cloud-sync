@@ -2,6 +2,7 @@ package main
 
 import (
 	"cloud-sync/internal/config"
+	"cloud-sync/internal/state"
 	"context"
 	"io"
 	"log/slog"
@@ -12,7 +13,7 @@ import (
 	"time"
 )
 
-func newTestCleanup(t *testing.T, dryRun bool) (*Cleanup, *StateManager, string) {
+func newTestCleanup(t *testing.T, dryRun bool) (*Cleanup, *state.StateManager, string) {
 	t.Helper()
 	dir := t.TempDir()
 	mediaDir := filepath.Join(dir, "media")
@@ -25,12 +26,12 @@ func newTestCleanup(t *testing.T, dryRun bool) (*Cleanup, *StateManager, string)
 		CleanupAfter: 72 * time.Hour, CleanupDryRun: dryRun,
 		AllowedPrefixes: []string{mediaDir},
 	}
-	st := NewStateManager(syncDir, log)
+	st := state.NewStateManager(syncDir, log)
 	_ = st.EnsureDirs()
 	return NewCleanup(cfg, log, st), st, mediaDir
 }
 
-func seedSynced(t *testing.T, st *StateManager, mediaDir, key string) string {
+func seedSynced(t *testing.T, st *state.StateManager, mediaDir, key string) string {
 	t.Helper()
 	full := filepath.Join(mediaDir, key)
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -43,7 +44,7 @@ func seedSynced(t *testing.T, st *StateManager, mediaDir, key string) string {
 		}
 	}
 	past := time.Now().UTC().Add(-100 * time.Hour).Truncate(time.Second)
-	rec := &StatusRecord{
+	rec := &state.StatusRecord{
 		Key: key, SrcPath: full, SyncedAt: past, CleanupAt: past.Add(time.Hour),
 		Status: "synced",
 	}
@@ -129,13 +130,13 @@ func TestCleanup_WhitelistProtection(t *testing.T) {
 		CleanupAfter: 72 * time.Hour, CleanupDryRun: false,
 		AllowedPrefixes: []string{filepath.Join(dir, "media")}, // whitelist does NOT include outOfScope
 	}
-	st := NewStateManager(syncDir, log)
+	st := state.NewStateManager(syncDir, log)
 	_ = st.EnsureDirs()
 
 	full := filepath.Join(outOfScope, "evil.mkv")
 	_ = os.WriteFile(full, []byte("x"), 0o644)
 	past := time.Now().UTC().Add(-100 * time.Hour).Truncate(time.Second)
-	_ = st.Write(&StatusRecord{Key: "evil.mkv", SrcPath: full, SyncedAt: past, CleanupAt: past.Add(time.Hour), Status: "synced"})
+	_ = st.Write(&state.StatusRecord{Key: "evil.mkv", SrcPath: full, SyncedAt: past, CleanupAt: past.Add(time.Hour), Status: "synced"})
 
 	cu := NewCleanup(cfg, log, st)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

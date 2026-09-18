@@ -3,6 +3,7 @@ package main
 import (
 	"cloud-sync/internal/config"
 	"cloud-sync/internal/openlist"
+	"cloud-sync/internal/state"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -61,7 +62,7 @@ func (m *mockUploader) TaskDone(ctx context.Context, taskID string) (openlist.Ta
 	return st, nil
 }
 
-func newTestPipeline(t *testing.T) (*Pipeline, *mockUploader, *StateManager, string) {
+func newTestPipeline(t *testing.T) (*Pipeline, *mockUploader, *state.StateManager, string) {
 	t.Helper()
 	dir := t.TempDir()
 	mediaDir := filepath.Join(dir, "media")
@@ -81,7 +82,7 @@ func newTestPipeline(t *testing.T) (*Pipeline, *mockUploader, *StateManager, str
 		TaskTimeout: 5 * time.Second, MinFileSize: 1024,
 		AllowedPrefixes: []string{mediaDir, aniDir},
 	}
-	st := NewStateManager(syncDir, log)
+	st := state.NewStateManager(syncDir, log)
 	_ = st.EnsureDirs()
 	up := newMockUploader()
 	return NewPipeline(cfg, log, up, st), up, st, mediaDir
@@ -98,16 +99,16 @@ func writeVideo(t *testing.T, dir, name string) {
 	}
 }
 
-// readRecord reads back the persisted StatusRecord for key, letting tests
+// readRecord reads back the persisted state.StatusRecord for key, letting tests
 // assert on fields (like SrcPath) that are not part of the state key.
-func readRecord(t *testing.T, st *StateManager, key string) *StatusRecord {
+func readRecord(t *testing.T, st *state.StateManager, key string) *state.StatusRecord {
 	t.Helper()
-	p := st.recordPath(&StatusRecord{Key: key, SyncedAt: time.Now().UTC(), Status: "synced"})
+	p := st.RecordPath(&state.StatusRecord{Key: key, SyncedAt: time.Now().UTC(), Status: "synced"})
 	b, err := os.ReadFile(p)
 	if err != nil {
 		t.Fatalf("read record %q: %v", key, err)
 	}
-	var rec StatusRecord
+	var rec state.StatusRecord
 	if err := json.Unmarshal(b, &rec); err != nil {
 		t.Fatalf("unmarshal record %q: %v", key, err)
 	}
@@ -226,7 +227,7 @@ func TestPipeline_RetriesOnTransientCopyError(t *testing.T) {
 		PollInterval: 10 * time.Millisecond, TaskTimeout: 5 * time.Second,
 		MinFileSize: 1024, AllowedPrefixes: []string{mediaDir},
 	}
-	st := NewStateManager(syncDir, log)
+	st := state.NewStateManager(syncDir, log)
 	_ = st.EnsureDirs()
 	up := &flakyUploader{mockUploader: mockUploader{taskStatuses: map[string]openlist.TaskStatus{}}, failFirstN: 1}
 	p := NewPipeline(cfg, log, up, st)
@@ -255,7 +256,7 @@ func TestPipeline_RetriesOnTransientCopyError(t *testing.T) {
 func TestPipeline_SkipsAlreadySynced(t *testing.T) {
 	p, up, st, mediaDir := newTestPipeline(t)
 	now := time.Now().UTC().Truncate(time.Second)
-	_ = st.Write(&StatusRecord{Key: "Movies/Y.mkv", SrcPath: "/x/Movies/Y.mkv", SyncedAt: now, CleanupAt: now.Add(time.Hour), Status: "synced"})
+	_ = st.Write(&state.StatusRecord{Key: "Movies/Y.mkv", SrcPath: "/x/Movies/Y.mkv", SyncedAt: now, CleanupAt: now.Add(time.Hour), Status: "synced"})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -278,7 +279,7 @@ func TestPipeline_StartupScan_OnlyUnsynced(t *testing.T) {
 	writeVideo(t, mediaDir, "Movies/A.mkv")
 	writeVideo(t, mediaDir, "Movies/B.mkv")
 	now := time.Now().UTC().Truncate(time.Second)
-	_ = st.Write(&StatusRecord{Key: "Movies/B.mkv", SrcPath: "/x/B.mkv", SyncedAt: now, CleanupAt: now.Add(time.Hour), Status: "synced"})
+	_ = st.Write(&state.StatusRecord{Key: "Movies/B.mkv", SrcPath: "/x/B.mkv", SyncedAt: now, CleanupAt: now.Add(time.Hour), Status: "synced"})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -352,7 +353,7 @@ func TestPipeline_NoFailedRecordOnParentCancel(t *testing.T) {
 		PollInterval: 10 * time.Millisecond, TaskTimeout: 5 * time.Second,
 		MinFileSize: 1024, AllowedPrefixes: []string{mediaDir},
 	}
-	st := NewStateManager(syncDir, log)
+	st := state.NewStateManager(syncDir, log)
 	_ = st.EnsureDirs()
 	up := &blockingUploader{
 		mockUploader: mockUploader{taskStatuses: map[string]openlist.TaskStatus{}},
@@ -420,7 +421,7 @@ func TestPipeline_RetryExhaustionNoTrailingSleep(t *testing.T) {
 		PollInterval: 10 * time.Millisecond, TaskTimeout: 5 * time.Second,
 		MinFileSize: 1024, AllowedPrefixes: []string{mediaDir},
 	}
-	st := NewStateManager(syncDir, log)
+	st := state.NewStateManager(syncDir, log)
 	_ = st.EnsureDirs()
 	up := &alwaysFailUploader{mockUploader: mockUploader{taskStatuses: map[string]openlist.TaskStatus{}}}
 	p := NewPipeline(cfg, log, up, st)
@@ -511,7 +512,7 @@ func TestPipeline_DedupesConcurrentEventsForSameKey(t *testing.T) {
 		MinFileSize:       1024,
 		AllowedPrefixes:   []string{mediaDir},
 	}
-	st := NewStateManager(syncDir, log)
+	st := state.NewStateManager(syncDir, log)
 	_ = st.EnsureDirs()
 	up := &firstCopyBlocker{
 		mockUploader:     mockUploader{taskStatuses: map[string]openlist.TaskStatus{}},
@@ -593,7 +594,7 @@ func TestPipeline_Process_SkipsSyncedWithoutStabilize(t *testing.T) {
 	src := filepath.Join(mediaDir, "Movies/Done.mkv")
 	writeVideo(t, mediaDir, "Movies/Done.mkv")
 	now := time.Now().UTC().Truncate(time.Second)
-	if err := st.Write(&StatusRecord{
+	if err := st.Write(&state.StatusRecord{
 		Key: "Movies/Done.mkv", SrcPath: src, SyncedAt: now,
 		CleanupAt: now.Add(time.Hour), Status: "synced",
 	}); err != nil {

@@ -1,4 +1,4 @@
-package main
+package state
 
 import (
 	"encoding/json"
@@ -45,7 +45,7 @@ func (s *StateManager) bucket(status string, t time.Time) string {
 	return filepath.Join(s.root, date)
 }
 
-func (s *StateManager) recordPath(rec *StatusRecord) string {
+func (s *StateManager) RecordPath(rec *StatusRecord) string {
 	return filepath.Join(s.bucket(rec.Status, rec.SyncedAt), filepath.FromSlash(rec.Key)+".json")
 }
 
@@ -120,12 +120,12 @@ func fileExists(p string) (bool, error) {
 
 // Write atomically writes rec at the path determined by its Key + SyncedAt + Status.
 func (s *StateManager) Write(rec *StatusRecord) error {
-	return s.atomicWrite(s.recordPath(rec), rec)
+	return s.atomicWrite(s.RecordPath(rec), rec)
 }
 
 // Update re-writes rec to its existing path (same Key/SyncedAt/Status).
 func (s *StateManager) Update(rec *StatusRecord) error {
-	return s.atomicWrite(s.recordPath(rec), rec)
+	return s.atomicWrite(s.RecordPath(rec), rec)
 }
 
 func (s *StateManager) atomicWrite(p string, rec *StatusRecord) error {

@@ -1,4 +1,4 @@
-package main
+package state
 
 import (
 	"encoding/json"
@@ -93,7 +93,7 @@ func TestState_AtomicWriteLeavesNoTmp(t *testing.T) {
 	if err := st.Write(rec); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	entries, _ := os.ReadDir(filepath.Dir(st.recordPath(rec)))
+	entries, _ := os.ReadDir(filepath.Dir(st.RecordPath(rec)))
 	for _, e := range entries {
 		if filepath.Ext(e.Name()) == ".tmp" {
 			t.Errorf("tmp file left behind: %s", e.Name())

@@ -11,6 +11,7 @@ import (
 	"cloud-sync/internal/config"
 	"cloud-sync/internal/logging"
 	"cloud-sync/internal/openlist"
+	"cloud-sync/internal/state"
 )
 
 // SupervisorDeps are the injectable factories the Supervisor uses to build a
@@ -24,7 +25,7 @@ type SupervisorDeps struct {
 type Generation struct {
 	cfg      *config.Config
 	uploader Uploader
-	state    *StateManager
+	state    *state.StateManager
 	watcher  *Watcher
 	pipeline *Pipeline
 	cleanup  *Cleanup
@@ -54,7 +55,7 @@ type Supervisor struct {
 	// kept even when paused so the Web UI can browse and precheck.
 	enabled bool
 	// state is created even while paused and rebuilt when SyncStatusDir changes.
-	state *StateManager
+	state *state.StateManager
 
 	// one-off work (e.g. a single-file retry or cleanup) run while no
 	// generation is active. oneOffMu guards shuttingDown against oneOffWG.Add so
@@ -111,7 +112,7 @@ func (s *Supervisor) Start(ctx context.Context) error {
 
 	// The state manager is created regardless of the task switch so the Web UI
 	// can browse files and run a precheck while tasks are paused.
-	st := NewStateManager(cfg.SyncStatusDir, log)
+	st := state.NewStateManager(cfg.SyncStatusDir, log)
 	if err := st.EnsureDirs(); err != nil {
 		s.setLastErr(err)
 		return err
@@ -299,7 +300,7 @@ func (s *Supervisor) Reload(ctx context.Context) error {
 	}
 
 	// Paused: rebuild just the state manager so browsing/precheck keep working.
-	st := NewStateManager(newCfg.SyncStatusDir, log)
+	st := state.NewStateManager(newCfg.SyncStatusDir, log)
 	if err := st.EnsureDirs(); err != nil {
 		s.setLastErr(err)
 		return err
@@ -315,7 +316,7 @@ func (s *Supervisor) Reload(ctx context.Context) error {
 // pipeline when tasks are active. ok is false only when no state has been
 // initialized yet (e.g. a failed initial Start). It is true while paused, so
 // the Web UI can browse files and precheck with tasks stopped.
-func (s *Supervisor) Snapshot() (cfg *config.Config, st *StateManager, pl *Pipeline, ok bool) {
+func (s *Supervisor) Snapshot() (cfg *config.Config, st *state.StateManager, pl *Pipeline, ok bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.cfg == nil || s.state == nil {

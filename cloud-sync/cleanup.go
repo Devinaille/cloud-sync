@@ -2,6 +2,7 @@ package main
 
 import (
 	"cloud-sync/internal/config"
+	"cloud-sync/internal/state"
 	"context"
 	"log/slog"
 	"os"
@@ -13,10 +14,10 @@ import (
 type Cleanup struct {
 	cfg *config.Config
 	log *slog.Logger
-	st  *StateManager
+	st  *state.StateManager
 }
 
-func NewCleanup(cfg *config.Config, log *slog.Logger, st *StateManager) *Cleanup {
+func NewCleanup(cfg *config.Config, log *slog.Logger, st *state.StateManager) *Cleanup {
 	return &Cleanup{cfg: cfg, log: log, st: st}
 }
 

@@ -16,6 +16,7 @@ import (
 
 	"cloud-sync/internal/buildinfo"
 	"cloud-sync/internal/config"
+	"cloud-sync/internal/state"
 )
 
 const (
@@ -294,7 +295,7 @@ func (w *WebServer) handleRetry(rw http.ResponseWriter, r *http.Request) {
 		writeError(rw, http.StatusInternalServerError, err.Error())
 		return
 	}
-	byKey := make(map[string]*StatusRecord, len(records))
+	byKey := make(map[string]*state.StatusRecord, len(records))
 	for _, rec := range records {
 		byKey[rec.Key] = rec
 	}
@@ -529,13 +530,13 @@ func statusPayload(ctx context.Context, sup *Supervisor) statusResponse {
 }
 
 // listRecords returns all persisted records (synced/failed/cleaned).
-func listRecords(st *StateManager) ([]*StatusRecord, error) {
+func listRecords(st *state.StateManager) ([]*state.StatusRecord, error) {
 	return st.ListAll()
 }
 
 // buildFileItems merges persisted records with unsynced files found by walking
 // the watch dirs. Record keys win over unsynced duplicates.
-func buildFileItems(cfg *config.Config, st *StateManager, records []*StatusRecord) ([]fileItem, error) {
+func buildFileItems(cfg *config.Config, st *state.StateManager, records []*state.StatusRecord) ([]fileItem, error) {
 	items := make([]fileItem, 0, len(records))
 	seen := make(map[string]struct{}, len(records))
 	for _, rec := range records {
@@ -555,7 +556,7 @@ func buildFileItems(cfg *config.Config, st *StateManager, records []*StatusRecor
 	return items, nil
 }
 
-func recordToItem(rec *StatusRecord) fileItem {
+func recordToItem(rec *state.StatusRecord) fileItem {
 	item := fileItem{
 		Key:        rec.Key,
 		SrcPath:    rec.SrcPath,
@@ -577,8 +578,8 @@ func recordToItem(rec *StatusRecord) fileItem {
 // unsyncedFiles walks every watch dir for video files that pass shouldEmit and
 // have no record yet. Returned records carry Key/SrcPath/SrcSize and a
 // synthetic "unsynced" status.
-func unsyncedFiles(cfg *config.Config, st *StateManager) ([]*StatusRecord, error) {
-	var out []*StatusRecord
+func unsyncedFiles(cfg *config.Config, st *state.StateManager) ([]*state.StatusRecord, error) {
+	var out []*state.StatusRecord
 	for _, root := range cfg.WatchDirs {
 		err := filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
 			if err != nil {
@@ -601,7 +602,7 @@ func unsyncedFiles(cfg *config.Config, st *StateManager) ([]*StatusRecord, error
 			if synced {
 				return nil
 			}
-			out = append(out, &StatusRecord{
+			out = append(out, &state.StatusRecord{
 				Key:     key,
 				SrcPath: p,
 				SrcSize: info.Size(),
@@ -622,7 +623,7 @@ func unsyncedFiles(cfg *config.Config, st *StateManager) ([]*StatusRecord, error
 //
 // cloudExists reports cloud-side existence; a transport error marks the
 // candidate "unknown" (and CloudChecked=false) rather than failing the report.
-func runPrecheck(ctx context.Context, cfg *config.Config, st *StateManager, cloudExists func(context.Context, string) (bool, error)) (*precheckReport, error) {
+func runPrecheck(ctx context.Context, cfg *config.Config, st *state.StateManager, cloudExists func(context.Context, string) (bool, error)) (*precheckReport, error) {
 	rep := &precheckReport{
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		WatchDirs:   cfg.WatchDirs,

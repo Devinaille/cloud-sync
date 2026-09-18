@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"cloud-sync/internal/config"
+	"cloud-sync/internal/state"
 	"context"
 	"encoding/json"
 	"io"
@@ -178,7 +179,7 @@ func TestAPI_Files_FiltersAndPaginates(t *testing.T) {
 	}
 	now := time.Now().UTC().Truncate(time.Second)
 	seed := func(key, status string) {
-		rec := &StatusRecord{
+		rec := &state.StatusRecord{
 			Key:       key,
 			SrcPath:   filepath.Join(env.watch, key),
 			SrcSize:   2048,
@@ -333,7 +334,7 @@ func TestAPI_Retry_DeletesAndEnqueues(t *testing.T) {
 	}
 	key := "Movies/R.mkv"
 	now := time.Now().UTC().Truncate(time.Second)
-	if err := st.Write(&StatusRecord{
+	if err := st.Write(&state.StatusRecord{
 		Key: key, SrcPath: src, SrcSize: 4096,
 		SyncedAt: now, CleanupAt: now.Add(72 * time.Hour), Status: "failed",
 	}); err != nil {
@@ -405,7 +406,7 @@ func TestAPI_Retry_WhilePaused(t *testing.T) {
 	}
 	key := "Movies/P.mkv"
 	now := time.Now().UTC().Truncate(time.Second)
-	if err := st.Write(&StatusRecord{
+	if err := st.Write(&state.StatusRecord{
 		Key: key, SrcPath: src, SrcSize: 4096,
 		SyncedAt: now, CleanupAt: now.Add(72 * time.Hour), Status: "failed",
 	}); err != nil {
@@ -454,7 +455,7 @@ func TestAPI_CleanupRun(t *testing.T) {
 	}
 
 	past := time.Now().UTC().Add(-100 * time.Hour)
-	if err := st.Write(&StatusRecord{
+	if err := st.Write(&state.StatusRecord{
 		Key: "Due.mkv", SrcPath: filepath.Join(env.watch, "Due.mkv"), SrcSize: 2048,
 		SyncedAt: past, CleanupAt: past.Add(time.Hour), Status: "synced",
 	}); err != nil {
