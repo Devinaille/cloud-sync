@@ -10,6 +10,7 @@ import (
 
 	"cloud-sync/internal/config"
 	"cloud-sync/internal/logging"
+	"cloud-sync/internal/openlist"
 )
 
 // SupervisorDeps are the injectable factories the Supervisor uses to build a
@@ -78,7 +79,7 @@ type Supervisor struct {
 func NewSupervisor(cfgPath string, cfg *config.Config, log *slog.Logger, deps SupervisorDeps) *Supervisor {
 	if deps.NewUploader == nil {
 		deps.NewUploader = func(cfg *config.Config, log *slog.Logger) Uploader {
-			return NewClient(cfg.OpenListURL, cfg.OpenListToken, log)
+			return openlist.NewClient(cfg.OpenListURL, cfg.OpenListToken, log)
 		}
 	}
 	return &Supervisor{cfgPath: cfgPath, cfg: cfg, log: log, deps: deps, enabled: cfg.TasksEnabled}

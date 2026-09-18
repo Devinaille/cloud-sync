@@ -2,6 +2,7 @@ package main
 
 import (
 	"cloud-sync/internal/config"
+	"cloud-sync/internal/openlist"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -17,7 +18,7 @@ import (
 type mockUploader struct {
 	mu           sync.Mutex
 	copyCalls    []copyCall
-	taskStatuses map[string]TaskStatus
+	taskStatuses map[string]openlist.TaskStatus
 	// cloudExists backs Exists (pre-check); nil means "nothing exists".
 	cloudExists map[string]bool
 }
@@ -34,7 +35,7 @@ type copyCall struct {
 }
 
 func newMockUploader() *mockUploader {
-	return &mockUploader{taskStatuses: map[string]TaskStatus{}}
+	return &mockUploader{taskStatuses: map[string]openlist.TaskStatus{}}
 }
 
 func (m *mockUploader) Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string, overwrite bool) (string, error) {
@@ -42,20 +43,20 @@ func (m *mockUploader) Copy(ctx context.Context, srcDir, srcName, dstDir, dstNam
 	defer m.mu.Unlock()
 	m.copyCalls = append(m.copyCalls, copyCall{srcDir, srcName, dstDir, dstName})
 	id := "task-" + srcName
-	m.taskStatuses[id] = TaskPending
+	m.taskStatuses[id] = openlist.TaskPending
 	return id, nil
 }
 
-func (m *mockUploader) TaskDone(ctx context.Context, taskID string) (TaskStatus, error) {
+func (m *mockUploader) TaskDone(ctx context.Context, taskID string) (openlist.TaskStatus, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	st, ok := m.taskStatuses[taskID]
 	if !ok {
-		return TaskFailed, nil
+		return openlist.TaskFailed, nil
 	}
-	if st == TaskPending {
-		m.taskStatuses[taskID] = TaskSucceeded
-		return TaskPending, nil
+	if st == openlist.TaskPending {
+		m.taskStatuses[taskID] = openlist.TaskSucceeded
+		return openlist.TaskPending, nil
 	}
 	return st, nil
 }
@@ -207,7 +208,7 @@ func (f *flakyUploader) Copy(ctx context.Context, srcDir, srcName, dstDir, dstNa
 		return "", fmt.Errorf("transient: connection refused")
 	}
 	id := "task-" + srcName
-	f.taskStatuses[id] = TaskPending
+	f.taskStatuses[id] = openlist.TaskPending
 	return id, nil
 }
 
@@ -227,7 +228,7 @@ func TestPipeline_RetriesOnTransientCopyError(t *testing.T) {
 	}
 	st := NewStateManager(syncDir, log)
 	_ = st.EnsureDirs()
-	up := &flakyUploader{mockUploader: mockUploader{taskStatuses: map[string]TaskStatus{}}, failFirstN: 1}
+	up := &flakyUploader{mockUploader: mockUploader{taskStatuses: map[string]openlist.TaskStatus{}}, failFirstN: 1}
 	p := NewPipeline(cfg, log, up, st)
 	writeVideo(t, mediaDir, "X.mkv")
 
@@ -354,7 +355,7 @@ func TestPipeline_NoFailedRecordOnParentCancel(t *testing.T) {
 	st := NewStateManager(syncDir, log)
 	_ = st.EnsureDirs()
 	up := &blockingUploader{
-		mockUploader: mockUploader{taskStatuses: map[string]TaskStatus{}},
+		mockUploader: mockUploader{taskStatuses: map[string]openlist.TaskStatus{}},
 		enterCopy:    make(chan struct{}),
 		releaseCopy:  make(chan struct{}),
 	}
@@ -421,7 +422,7 @@ func TestPipeline_RetryExhaustionNoTrailingSleep(t *testing.T) {
 	}
 	st := NewStateManager(syncDir, log)
 	_ = st.EnsureDirs()
-	up := &alwaysFailUploader{mockUploader: mockUploader{taskStatuses: map[string]TaskStatus{}}}
+	up := &alwaysFailUploader{mockUploader: mockUploader{taskStatuses: map[string]openlist.TaskStatus{}}}
 	p := NewPipeline(cfg, log, up, st)
 	writeVideo(t, mediaDir, "Movies/Exhaust.mkv")
 
@@ -484,7 +485,7 @@ func (b *firstCopyBlocker) Copy(ctx context.Context, srcDir, srcName, dstDir, ds
 	}
 	b.mu.Lock()
 	id := fmt.Sprintf("task-%s-%d", srcName, n)
-	b.taskStatuses[id] = TaskPending
+	b.taskStatuses[id] = openlist.TaskPending
 	b.mu.Unlock()
 	return id, nil
 }
@@ -513,7 +514,7 @@ func TestPipeline_DedupesConcurrentEventsForSameKey(t *testing.T) {
 	st := NewStateManager(syncDir, log)
 	_ = st.EnsureDirs()
 	up := &firstCopyBlocker{
-		mockUploader:     mockUploader{taskStatuses: map[string]TaskStatus{}},
+		mockUploader:     mockUploader{taskStatuses: map[string]openlist.TaskStatus{}},
 		firstCopyEntered: make(chan struct{}),
 		releaseFirstCopy: make(chan struct{}),
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"cloud-sync/internal/config"
+	"cloud-sync/internal/openlist"
 	"context"
 	"fmt"
 	"log/slog"
@@ -14,7 +15,7 @@ import (
 
 type Uploader interface {
 	Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string, overwrite bool) (string, error)
-	TaskDone(ctx context.Context, taskID string) (TaskStatus, error)
+	TaskDone(ctx context.Context, taskID string) (openlist.TaskStatus, error)
 }
 
 type Pipeline struct {
@@ -225,13 +226,13 @@ func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcDir, sr
 				break // retry whole task
 			}
 			switch st {
-			case TaskPending:
+			case openlist.TaskPending:
 				if !sleepCtx(ctx, p.cfg.PollInterval) {
 					cancel()
 					return ctx.Err()
 				}
 				continue
-			case TaskSucceeded:
+			case openlist.TaskSucceeded:
 				cancel()
 				now := time.Now().UTC()
 				rec := &StatusRecord{
@@ -250,7 +251,7 @@ func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcDir, sr
 				}
 				p.log.Info("pipeline: synced", "key", key, "task_id", taskID)
 				return nil
-			case TaskFailed:
+			case openlist.TaskFailed:
 				cancel()
 				lastErr = fmt.Errorf("openlist task failed")
 				goto RETRY

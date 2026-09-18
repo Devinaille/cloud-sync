@@ -2,6 +2,7 @@ package main
 
 import (
 	"cloud-sync/internal/config"
+	"cloud-sync/internal/openlist"
 	"context"
 	"fmt"
 	"io"
@@ -302,7 +303,7 @@ func (p *pingFailUploader) Ping(ctx context.Context) error {
 
 func TestSupervisor_PingFailureStillStarts(t *testing.T) {
 	cfg := supervisorTestCfg(t)
-	up := &pingFailUploader{mockUploader: mockUploader{taskStatuses: map[string]TaskStatus{}}}
+	up := &pingFailUploader{mockUploader: mockUploader{taskStatuses: map[string]openlist.TaskStatus{}}}
 	sup := NewSupervisor("", cfg, supervisorTestLogger(), SupervisorDeps{
 		NewUploader: func(c *config.Config, l *slog.Logger) Uploader { return up },
 	})
