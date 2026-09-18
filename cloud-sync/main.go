@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"cloud-sync/internal/buildinfo"
+	"cloud-sync/internal/logging"
 )
 
 func main() {
@@ -20,7 +21,7 @@ func main() {
 		os.Stderr.WriteString("config error: " + err.Error() + "\n")
 		os.Exit(2)
 	}
-	log := Init(cfg.LogLevel, cfg.LogFile)
+	log := logging.Init(cfg.LogLevel, cfg.LogFile)
 	slog.SetDefault(log)
 	log.Info("cloud-sync starting",
 		"version", buildinfo.Version,

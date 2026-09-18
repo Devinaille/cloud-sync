@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"cloud-sync/internal/logging"
 )
 
 // SupervisorDeps are the injectable factories the Supervisor uses to build a
@@ -261,7 +263,7 @@ func (s *Supervisor) Reload(ctx context.Context) error {
 	// Build the new logger outside the write lock; only the pointer swap below
 	// needs guarding. slog.SetDefault mutates process-global state, so keep it
 	// out of the locked section too.
-	log := Init(newCfg.LogLevel, newCfg.LogFile)
+	log := logging.Init(newCfg.LogLevel, newCfg.LogFile)
 	slog.SetDefault(log)
 
 	s.mu.Lock()
