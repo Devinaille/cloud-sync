@@ -1,4 +1,4 @@
-package main
+package httpapi
 
 import (
 	"io"
@@ -6,10 +6,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"cloud-sync/internal/testutil"
 )
 
 func TestWeb_IndexServed(t *testing.T) {
-	srv := httptest.NewServer(NewWebServer(nil, supervisorTestLogger()).Handler())
+	srv := httptest.NewServer(NewWebServer(nil, testutil.TestLogger()).Handler())
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/")
@@ -30,7 +32,7 @@ func TestWeb_IndexServed(t *testing.T) {
 }
 
 func TestWeb_UnknownAPI(t *testing.T) {
-	srv := httptest.NewServer(NewWebServer(nil, supervisorTestLogger()).Handler())
+	srv := httptest.NewServer(NewWebServer(nil, testutil.TestLogger()).Handler())
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/api/nope")

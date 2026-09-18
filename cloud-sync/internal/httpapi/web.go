@@ -1,4 +1,4 @@
-package main
+package httpapi
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"cloud-sync/internal/supervisor"
 )
 
 // webFS holds the embedded single-page UI. The web/ directory contains
@@ -21,11 +23,11 @@ var webFS embed.FS
 // WebServer serves the embedded UI plus the JSON API. It holds a reference to
 // the Supervisor so handlers can snapshot the current generation.
 type WebServer struct {
-	sup *Supervisor
+	sup *supervisor.Supervisor
 	log *slog.Logger
 }
 
-func NewWebServer(sup *Supervisor, log *slog.Logger) *WebServer {
+func NewWebServer(sup *supervisor.Supervisor, log *slog.Logger) *WebServer {
 	return &WebServer{sup: sup, log: log}
 }
 

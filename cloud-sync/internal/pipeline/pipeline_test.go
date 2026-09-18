@@ -1,4 +1,4 @@
-package main
+package pipeline
 
 import (
 	"context"
@@ -8,58 +8,17 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
+
+	"cloud-sync/internal/config"
+	"cloud-sync/internal/mockopenlist"
+	"cloud-sync/internal/openlist"
+	"cloud-sync/internal/state"
+	"cloud-sync/internal/watcher"
 )
 
-type mockUploader struct {
-	mu           sync.Mutex
-	copyCalls    []copyCall
-	taskStatuses map[string]TaskStatus
-	// cloudExists backs Exists (pre-check); nil means "nothing exists".
-	cloudExists map[string]bool
-}
-
-// Exists reports cloud-side existence for the pre-check.
-func (m *mockUploader) Exists(ctx context.Context, path string) (bool, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.cloudExists[path], nil
-}
-
-type copyCall struct {
-	SrcDir, SrcName, DstDir, DstName string
-}
-
-func newMockUploader() *mockUploader {
-	return &mockUploader{taskStatuses: map[string]TaskStatus{}}
-}
-
-func (m *mockUploader) Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string, overwrite bool) (string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.copyCalls = append(m.copyCalls, copyCall{srcDir, srcName, dstDir, dstName})
-	id := "task-" + srcName
-	m.taskStatuses[id] = TaskPending
-	return id, nil
-}
-
-func (m *mockUploader) TaskDone(ctx context.Context, taskID string) (TaskStatus, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	st, ok := m.taskStatuses[taskID]
-	if !ok {
-		return TaskFailed, nil
-	}
-	if st == TaskPending {
-		m.taskStatuses[taskID] = TaskSucceeded
-		return TaskPending, nil
-	}
-	return st, nil
-}
-
-func newTestPipeline(t *testing.T) (*Pipeline, *mockUploader, *StateManager, string) {
+func newTestPipeline(t *testing.T) (*Pipeline, *mockopenlist.Uploader, *state.StateManager, string) {
 	t.Helper()
 	dir := t.TempDir()
 	mediaDir := filepath.Join(dir, "media")
@@ -71,7 +30,7 @@ func newTestPipeline(t *testing.T) (*Pipeline, *mockUploader, *StateManager, str
 		}
 	}
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	cfg := &Config{
+	cfg := &config.Config{
 		OpenListURL: "http://x", SrcStorage: "/local_media", DstStorage: "/139yun_media",
 		WatchDirs: []string{mediaDir, aniDir}, SyncStatusDir: syncDir,
 		CleanupAfter: 72 * time.Hour, UploadConcurrency: 2,
@@ -79,9 +38,9 @@ func newTestPipeline(t *testing.T) (*Pipeline, *mockUploader, *StateManager, str
 		TaskTimeout: 5 * time.Second, MinFileSize: 1024,
 		AllowedPrefixes: []string{mediaDir, aniDir},
 	}
-	st := NewStateManager(syncDir, log)
+	st := state.NewStateManager(syncDir, log)
 	_ = st.EnsureDirs()
-	up := newMockUploader()
+	up := mockopenlist.New()
 	return NewPipeline(cfg, log, up, st), up, st, mediaDir
 }
 
@@ -96,16 +55,16 @@ func writeVideo(t *testing.T, dir, name string) {
 	}
 }
 
-// readRecord reads back the persisted StatusRecord for key, letting tests
+// readRecord reads back the persisted state.StatusRecord for key, letting tests
 // assert on fields (like SrcPath) that are not part of the state key.
-func readRecord(t *testing.T, st *StateManager, key string) *StatusRecord {
+func readRecord(t *testing.T, st *state.StateManager, key string) *state.StatusRecord {
 	t.Helper()
-	p := st.recordPath(&StatusRecord{Key: key, SyncedAt: time.Now().UTC(), Status: "synced"})
+	p := st.RecordPath(&state.StatusRecord{Key: key, SyncedAt: time.Now().UTC(), Status: "synced"})
 	b, err := os.ReadFile(p)
 	if err != nil {
 		t.Fatalf("read record %q: %v", key, err)
 	}
-	var rec StatusRecord
+	var rec state.StatusRecord
 	if err := json.Unmarshal(b, &rec); err != nil {
 		t.Fatalf("unmarshal record %q: %v", key, err)
 	}
@@ -118,8 +77,8 @@ func TestPipeline_HappyPath(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	events := make(chan FileEvent, 1)
-	events <- FileEvent{Path: filepath.Join(mediaDir, "Movies/X.mkv"), Size: 4096, Detected: time.Now()}
+	events := make(chan watcher.FileEvent, 1)
+	events <- watcher.FileEvent{Path: filepath.Join(mediaDir, "Movies/X.mkv"), Size: 4096, Detected: time.Now()}
 	close(events)
 
 	done := make(chan struct{})
@@ -130,12 +89,12 @@ func TestPipeline_HappyPath(t *testing.T) {
 		t.Fatalf("Run did not return: %v", ctx.Err())
 	}
 
-	up.mu.Lock()
-	defer up.mu.Unlock()
-	if len(up.copyCalls) != 1 {
-		t.Fatalf("Copy calls = %d, want 1", len(up.copyCalls))
+	up.Mu.Lock()
+	defer up.Mu.Unlock()
+	if len(up.CopyCalls) != 1 {
+		t.Fatalf("Copy calls = %d, want 1", len(up.CopyCalls))
 	}
-	call := up.copyCalls[0]
+	call := up.CopyCalls[0]
 	if call.SrcDir != "/local_media/media/Movies" || call.DstDir != "/139yun_media/media/Movies" {
 		t.Errorf("Copy dirs wrong: %+v", call)
 	}
@@ -155,12 +114,12 @@ func TestPipeline_Process_Enqueues(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	p.Process(ctx, FileEvent{Path: filepath.Join(mediaDir, "Movies/P.mkv"), Size: 4096, Detected: time.Now()})
+	p.Process(ctx, watcher.FileEvent{Path: filepath.Join(mediaDir, "Movies/P.mkv"), Size: 4096, Detected: time.Now()})
 
-	up.mu.Lock()
-	defer up.mu.Unlock()
-	if len(up.copyCalls) != 1 {
-		t.Fatalf("Copy calls = %d, want 1", len(up.copyCalls))
+	up.Mu.Lock()
+	defer up.Mu.Unlock()
+	if len(up.CopyCalls) != 1 {
+		t.Fatalf("Copy calls = %d, want 1", len(up.CopyCalls))
 	}
 	ok, _ := st.AlreadySynced("Movies/P.mkv")
 	if !ok {
@@ -175,8 +134,8 @@ func TestPipeline_WritesAbsoluteSrcPath(t *testing.T) {
 	src := filepath.Join(mediaDir, "Movies/Z.mkv")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	events := make(chan FileEvent, 1)
-	events <- FileEvent{Path: src, Size: 4096, Detected: time.Now()}
+	events := make(chan watcher.FileEvent, 1)
+	events <- watcher.FileEvent{Path: src, Size: 4096, Detected: time.Now()}
 	close(events)
 
 	done := make(chan struct{})
@@ -194,19 +153,19 @@ func TestPipeline_WritesAbsoluteSrcPath(t *testing.T) {
 }
 
 type flakyUploader struct {
-	mockUploader
+	mockopenlist.Uploader
 	failFirstN int
 }
 
 func (f *flakyUploader) Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string, overwrite bool) (string, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.copyCalls = append(f.copyCalls, copyCall{srcDir, srcName, dstDir, dstName})
-	if len(f.copyCalls) <= f.failFirstN {
+	f.Mu.Lock()
+	defer f.Mu.Unlock()
+	f.CopyCalls = append(f.CopyCalls, mockopenlist.CopyCall{SrcDir: srcDir, SrcName: srcName, DstDir: dstDir, DstName: dstName})
+	if len(f.CopyCalls) <= f.failFirstN {
 		return "", fmt.Errorf("transient: connection refused")
 	}
 	id := "task-" + srcName
-	f.taskStatuses[id] = TaskPending
+	f.TaskStatuses[id] = openlist.TaskPending
 	return id, nil
 }
 
@@ -217,32 +176,32 @@ func TestPipeline_RetriesOnTransientCopyError(t *testing.T) {
 	_ = os.MkdirAll(mediaDir, 0o755)
 	_ = os.MkdirAll(syncDir, 0o755)
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	cfg := &Config{
+	cfg := &config.Config{
 		SrcStorage: "/local_media", DstStorage: "/139yun_media",
 		WatchDirs: []string{mediaDir}, SyncStatusDir: syncDir,
 		UploadConcurrency: 1, StabilizeWait: 50 * time.Millisecond,
 		PollInterval: 10 * time.Millisecond, TaskTimeout: 5 * time.Second,
 		MinFileSize: 1024, AllowedPrefixes: []string{mediaDir},
 	}
-	st := NewStateManager(syncDir, log)
+	st := state.NewStateManager(syncDir, log)
 	_ = st.EnsureDirs()
-	up := &flakyUploader{mockUploader: mockUploader{taskStatuses: map[string]TaskStatus{}}, failFirstN: 1}
+	up := &flakyUploader{Uploader: mockopenlist.Uploader{TaskStatuses: map[string]openlist.TaskStatus{}}, failFirstN: 1}
 	p := NewPipeline(cfg, log, up, st)
 	writeVideo(t, mediaDir, "X.mkv")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	events := make(chan FileEvent, 1)
-	events <- FileEvent{Path: filepath.Join(mediaDir, "X.mkv"), Size: 4096, Detected: time.Now()}
+	events := make(chan watcher.FileEvent, 1)
+	events <- watcher.FileEvent{Path: filepath.Join(mediaDir, "X.mkv"), Size: 4096, Detected: time.Now()}
 	close(events)
 	done := make(chan struct{})
 	go func() { p.Run(ctx, events); close(done) }()
 	<-done
 
-	up.mu.Lock()
-	defer up.mu.Unlock()
-	if len(up.copyCalls) != 2 {
-		t.Errorf("Copy calls = %d, want 2 (1 failure + 1 success)", len(up.copyCalls))
+	up.Mu.Lock()
+	defer up.Mu.Unlock()
+	if len(up.CopyCalls) != 2 {
+		t.Errorf("Copy calls = %d, want 2 (1 failure + 1 success)", len(up.CopyCalls))
 	}
 	ok, _ := st.AlreadySynced("X.mkv")
 	if !ok {
@@ -253,21 +212,21 @@ func TestPipeline_RetriesOnTransientCopyError(t *testing.T) {
 func TestPipeline_SkipsAlreadySynced(t *testing.T) {
 	p, up, st, mediaDir := newTestPipeline(t)
 	now := time.Now().UTC().Truncate(time.Second)
-	_ = st.Write(&StatusRecord{Key: "Movies/Y.mkv", SrcPath: "/x/Movies/Y.mkv", SyncedAt: now, CleanupAt: now.Add(time.Hour), Status: "synced"})
+	_ = st.Write(&state.StatusRecord{Key: "Movies/Y.mkv", SrcPath: "/x/Movies/Y.mkv", SyncedAt: now, CleanupAt: now.Add(time.Hour), Status: "synced"})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	events := make(chan FileEvent, 1)
-	events <- FileEvent{Path: filepath.Join(mediaDir, "Movies/Y.mkv"), Size: 4096, Detected: time.Now()}
+	events := make(chan watcher.FileEvent, 1)
+	events <- watcher.FileEvent{Path: filepath.Join(mediaDir, "Movies/Y.mkv"), Size: 4096, Detected: time.Now()}
 	close(events)
 	done := make(chan struct{})
 	go func() { p.Run(ctx, events); close(done) }()
 	<-done
 
-	up.mu.Lock()
-	defer up.mu.Unlock()
-	if len(up.copyCalls) != 0 {
-		t.Errorf("Copy calls = %d, want 0 (already synced)", len(up.copyCalls))
+	up.Mu.Lock()
+	defer up.Mu.Unlock()
+	if len(up.CopyCalls) != 0 {
+		t.Errorf("Copy calls = %d, want 0 (already synced)", len(up.CopyCalls))
 	}
 }
 
@@ -276,7 +235,7 @@ func TestPipeline_StartupScan_OnlyUnsynced(t *testing.T) {
 	writeVideo(t, mediaDir, "Movies/A.mkv")
 	writeVideo(t, mediaDir, "Movies/B.mkv")
 	now := time.Now().UTC().Truncate(time.Second)
-	_ = st.Write(&StatusRecord{Key: "Movies/B.mkv", SrcPath: "/x/B.mkv", SyncedAt: now, CleanupAt: now.Add(time.Hour), Status: "synced"})
+	_ = st.Write(&state.StatusRecord{Key: "Movies/B.mkv", SrcPath: "/x/B.mkv", SyncedAt: now, CleanupAt: now.Add(time.Hour), Status: "synced"})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -284,13 +243,13 @@ func TestPipeline_StartupScan_OnlyUnsynced(t *testing.T) {
 		t.Fatalf("StartupScan: %v", err)
 	}
 
-	up.mu.Lock()
-	defer up.mu.Unlock()
-	if len(up.copyCalls) != 1 {
-		t.Errorf("Copy calls = %d, want 1 (only A; B is pre-synced)", len(up.copyCalls))
+	up.Mu.Lock()
+	defer up.Mu.Unlock()
+	if len(up.CopyCalls) != 1 {
+		t.Errorf("Copy calls = %d, want 1 (only A; B is pre-synced)", len(up.CopyCalls))
 	}
-	if len(up.copyCalls) >= 1 {
-		call := up.copyCalls[0]
+	if len(up.CopyCalls) >= 1 {
+		call := up.CopyCalls[0]
 		if call.SrcName != "A.mkv" {
 			t.Errorf("Copy SrcName = %q, want A.mkv", call.SrcName)
 		}
@@ -309,15 +268,15 @@ func TestPipeline_StartupScan_OnlyUnsynced(t *testing.T) {
 // blockingUploader records Copy calls and lets the test pause the first Copy
 // (via releaseCopy) so a parent-context cancel can race against it.
 type blockingUploader struct {
-	mockUploader
+	mockopenlist.Uploader
 	enterCopy   chan struct{}
 	releaseCopy chan struct{}
 }
 
 func (b *blockingUploader) Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string, overwrite bool) (string, error) {
-	b.mu.Lock()
-	b.copyCalls = append(b.copyCalls, copyCall{srcDir, srcName, dstDir, dstName})
-	b.mu.Unlock()
+	b.Mu.Lock()
+	b.CopyCalls = append(b.CopyCalls, mockopenlist.CopyCall{SrcDir: srcDir, SrcName: srcName, DstDir: dstDir, DstName: dstName})
+	b.Mu.Unlock()
 	select {
 	case <-b.enterCopy:
 	default:
@@ -343,27 +302,27 @@ func TestPipeline_NoFailedRecordOnParentCancel(t *testing.T) {
 	_ = os.MkdirAll(mediaDir, 0o755)
 	_ = os.MkdirAll(syncDir, 0o755)
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	cfg := &Config{
+	cfg := &config.Config{
 		SrcStorage: "/local_media", DstStorage: "/139yun_media",
 		WatchDirs: []string{mediaDir}, SyncStatusDir: syncDir,
 		UploadConcurrency: 1, StabilizeWait: 50 * time.Millisecond,
 		PollInterval: 10 * time.Millisecond, TaskTimeout: 5 * time.Second,
 		MinFileSize: 1024, AllowedPrefixes: []string{mediaDir},
 	}
-	st := NewStateManager(syncDir, log)
+	st := state.NewStateManager(syncDir, log)
 	_ = st.EnsureDirs()
 	up := &blockingUploader{
-		mockUploader: mockUploader{taskStatuses: map[string]TaskStatus{}},
-		enterCopy:    make(chan struct{}),
-		releaseCopy:  make(chan struct{}),
+		Uploader:    mockopenlist.Uploader{TaskStatuses: map[string]openlist.TaskStatus{}},
+		enterCopy:   make(chan struct{}),
+		releaseCopy: make(chan struct{}),
 	}
 	p := NewPipeline(cfg, log, up, st)
 	writeVideo(t, mediaDir, "Movies/Cancel.mkv")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	events := make(chan FileEvent, 1)
-	events <- FileEvent{Path: filepath.Join(mediaDir, "Movies/Cancel.mkv"), Size: 4096, Detected: time.Now()}
+	events := make(chan watcher.FileEvent, 1)
+	events <- watcher.FileEvent{Path: filepath.Join(mediaDir, "Movies/Cancel.mkv"), Size: 4096, Detected: time.Now()}
 	close(events)
 	done := make(chan struct{})
 	go func() { p.Run(ctx, events); close(done) }()
@@ -390,13 +349,13 @@ func TestPipeline_NoFailedRecordOnParentCancel(t *testing.T) {
 // alwaysFailUploader fails Copy on every attempt and lets the test verify the
 // retry-exhaustion path without exercising the poll loop.
 type alwaysFailUploader struct {
-	mockUploader
+	mockopenlist.Uploader
 }
 
 func (a *alwaysFailUploader) Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string, overwrite bool) (string, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.copyCalls = append(a.copyCalls, copyCall{srcDir, srcName, dstDir, dstName})
+	a.Mu.Lock()
+	defer a.Mu.Unlock()
+	a.CopyCalls = append(a.CopyCalls, mockopenlist.CopyCall{SrcDir: srcDir, SrcName: srcName, DstDir: dstDir, DstName: dstName})
 	return "", fmt.Errorf("simulated: copy always fails")
 }
 
@@ -411,23 +370,23 @@ func TestPipeline_RetryExhaustionNoTrailingSleep(t *testing.T) {
 	_ = os.MkdirAll(mediaDir, 0o755)
 	_ = os.MkdirAll(syncDir, 0o755)
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	cfg := &Config{
+	cfg := &config.Config{
 		SrcStorage: "/local_media", DstStorage: "/139yun_media",
 		WatchDirs: []string{mediaDir}, SyncStatusDir: syncDir,
 		UploadConcurrency: 1, StabilizeWait: 50 * time.Millisecond,
 		PollInterval: 10 * time.Millisecond, TaskTimeout: 5 * time.Second,
 		MinFileSize: 1024, AllowedPrefixes: []string{mediaDir},
 	}
-	st := NewStateManager(syncDir, log)
+	st := state.NewStateManager(syncDir, log)
 	_ = st.EnsureDirs()
-	up := &alwaysFailUploader{mockUploader: mockUploader{taskStatuses: map[string]TaskStatus{}}}
+	up := &alwaysFailUploader{Uploader: mockopenlist.Uploader{TaskStatuses: map[string]openlist.TaskStatus{}}}
 	p := NewPipeline(cfg, log, up, st)
 	writeVideo(t, mediaDir, "Movies/Exhaust.mkv")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	events := make(chan FileEvent, 1)
-	events <- FileEvent{Path: filepath.Join(mediaDir, "Movies/Exhaust.mkv"), Size: 4096, Detected: time.Now()}
+	events := make(chan watcher.FileEvent, 1)
+	events <- watcher.FileEvent{Path: filepath.Join(mediaDir, "Movies/Exhaust.mkv"), Size: 4096, Detected: time.Now()}
 	close(events)
 
 	start := time.Now()
@@ -440,10 +399,10 @@ func TestPipeline_RetryExhaustionNoTrailingSleep(t *testing.T) {
 	}
 	elapsed := time.Since(start)
 
-	up.mu.Lock()
-	defer up.mu.Unlock()
-	if len(up.copyCalls) != 3 {
-		t.Errorf("Copy calls = %d, want 3 (exhausted retries)", len(up.copyCalls))
+	up.Mu.Lock()
+	defer up.Mu.Unlock()
+	if len(up.CopyCalls) != 3 {
+		t.Errorf("Copy calls = %d, want 3 (exhausted retries)", len(up.CopyCalls))
 	}
 	// Bug: total backoff = 1s+2s+4s = 7s. Fix: 1s+2s = 3s.
 	// Threshold of 5s catches the bug and gives the fix generous headroom.
@@ -462,16 +421,16 @@ func TestPipeline_RetryExhaustionNoTrailingSleep(t *testing.T) {
 // Subsequent Copy calls return immediately so any duplicate would race past
 // the blocking point and be counted.
 type firstCopyBlocker struct {
-	mockUploader
+	mockopenlist.Uploader
 	firstCopyEntered chan struct{}
 	releaseFirstCopy chan struct{}
 }
 
 func (b *firstCopyBlocker) Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string, overwrite bool) (string, error) {
-	b.mu.Lock()
-	n := len(b.copyCalls)
-	b.copyCalls = append(b.copyCalls, copyCall{srcDir, srcName, dstDir, dstName})
-	b.mu.Unlock()
+	b.Mu.Lock()
+	n := len(b.CopyCalls)
+	b.CopyCalls = append(b.CopyCalls, mockopenlist.CopyCall{SrcDir: srcDir, SrcName: srcName, DstDir: dstDir, DstName: dstName})
+	b.Mu.Unlock()
 
 	if n == 0 {
 		select {
@@ -481,10 +440,10 @@ func (b *firstCopyBlocker) Copy(ctx context.Context, srcDir, srcName, dstDir, ds
 		}
 		<-b.releaseFirstCopy
 	}
-	b.mu.Lock()
+	b.Mu.Lock()
 	id := fmt.Sprintf("task-%s-%d", srcName, n)
-	b.taskStatuses[id] = TaskPending
-	b.mu.Unlock()
+	b.TaskStatuses[id] = openlist.TaskPending
+	b.Mu.Unlock()
 	return id, nil
 }
 
@@ -499,7 +458,7 @@ func TestPipeline_DedupesConcurrentEventsForSameKey(t *testing.T) {
 	_ = os.MkdirAll(mediaDir, 0o755)
 	_ = os.MkdirAll(syncDir, 0o755)
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	cfg := &Config{
+	cfg := &config.Config{
 		SrcStorage: "/local_media", DstStorage: "/139yun_media",
 		WatchDirs: []string{mediaDir}, SyncStatusDir: syncDir,
 		UploadConcurrency: 2,
@@ -509,10 +468,10 @@ func TestPipeline_DedupesConcurrentEventsForSameKey(t *testing.T) {
 		MinFileSize:       1024,
 		AllowedPrefixes:   []string{mediaDir},
 	}
-	st := NewStateManager(syncDir, log)
+	st := state.NewStateManager(syncDir, log)
 	_ = st.EnsureDirs()
 	up := &firstCopyBlocker{
-		mockUploader:     mockUploader{taskStatuses: map[string]TaskStatus{}},
+		Uploader:         mockopenlist.Uploader{TaskStatuses: map[string]openlist.TaskStatus{}},
 		firstCopyEntered: make(chan struct{}),
 		releaseFirstCopy: make(chan struct{}),
 	}
@@ -521,9 +480,9 @@ func TestPipeline_DedupesConcurrentEventsForSameKey(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	events := make(chan FileEvent, 2)
-	events <- FileEvent{Path: filepath.Join(mediaDir, "Movies/Dup.mkv"), Size: 4096, Detected: time.Now()}
-	events <- FileEvent{Path: filepath.Join(mediaDir, "Movies/Dup.mkv"), Size: 4096, Detected: time.Now()}
+	events := make(chan watcher.FileEvent, 2)
+	events <- watcher.FileEvent{Path: filepath.Join(mediaDir, "Movies/Dup.mkv"), Size: 4096, Detected: time.Now()}
+	events <- watcher.FileEvent{Path: filepath.Join(mediaDir, "Movies/Dup.mkv"), Size: 4096, Detected: time.Now()}
 	close(events)
 	done := make(chan struct{})
 	go func() { p.Run(ctx, events); close(done) }()
@@ -543,10 +502,10 @@ func TestPipeline_DedupesConcurrentEventsForSameKey(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatalf("Run did not return: %v", ctx.Err())
 	}
-	up.mu.Lock()
-	defer up.mu.Unlock()
-	if len(up.copyCalls) != 1 {
-		t.Errorf("Copy calls = %d, want 1 (concurrent duplicate must be deduped)", len(up.copyCalls))
+	up.Mu.Lock()
+	defer up.Mu.Unlock()
+	if len(up.CopyCalls) != 1 {
+		t.Errorf("Copy calls = %d, want 1 (concurrent duplicate must be deduped)", len(up.CopyCalls))
 	}
 	synced, _ := st.AlreadySynced("Movies/Dup.mkv")
 	if !synced {
@@ -567,9 +526,9 @@ func TestPipeline_StartupScan_ProcessesMultipleUnsynced(t *testing.T) {
 		t.Fatalf("StartupScan: %v", err)
 	}
 
-	up.mu.Lock()
-	n := len(up.copyCalls)
-	up.mu.Unlock()
+	up.Mu.Lock()
+	n := len(up.CopyCalls)
+	up.Mu.Unlock()
 	if n != 2 {
 		t.Errorf("Copy calls = %d, want 2", n)
 	}
@@ -591,7 +550,7 @@ func TestPipeline_Process_SkipsSyncedWithoutStabilize(t *testing.T) {
 	src := filepath.Join(mediaDir, "Movies/Done.mkv")
 	writeVideo(t, mediaDir, "Movies/Done.mkv")
 	now := time.Now().UTC().Truncate(time.Second)
-	if err := st.Write(&StatusRecord{
+	if err := st.Write(&state.StatusRecord{
 		Key: "Movies/Done.mkv", SrcPath: src, SyncedAt: now,
 		CleanupAt: now.Add(time.Hour), Status: "synced",
 	}); err != nil {
@@ -599,13 +558,13 @@ func TestPipeline_Process_SkipsSyncedWithoutStabilize(t *testing.T) {
 	}
 
 	start := time.Now()
-	p.Process(context.Background(), FileEvent{Path: src, Size: 4096, Detected: time.Now()})
+	p.Process(context.Background(), watcher.FileEvent{Path: src, Size: 4096, Detected: time.Now()})
 	if d := time.Since(start); d > time.Second {
 		t.Errorf("Process took %v for an already-synced file; stabilize should be skipped", d)
 	}
-	up.mu.Lock()
-	n := len(up.copyCalls)
-	up.mu.Unlock()
+	up.Mu.Lock()
+	n := len(up.CopyCalls)
+	up.Mu.Unlock()
 	if n != 0 {
 		t.Errorf("Copy calls = %d, want 0", n)
 	}

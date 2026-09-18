@@ -1,12 +1,13 @@
-package main
+package watcher
 
 import (
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
+
+	"cloud-sync/internal/media"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -94,7 +95,7 @@ func (w *Watcher) loop() {
 				}
 				continue
 			}
-			if !shouldEmit(ev.Name, info.Size(), w.minSize) {
+			if !media.ShouldEmit(ev.Name, info.Size(), w.minSize) {
 				continue
 			}
 			w.pushEvent(ev.Name, info.Size())
@@ -128,7 +129,7 @@ func (w *Watcher) emitExisting(root string) {
 		if err != nil || fi.IsDir() {
 			return nil
 		}
-		if shouldEmit(p, fi.Size(), w.minSize) {
+		if media.ShouldEmit(p, fi.Size(), w.minSize) {
 			w.pushEvent(p, fi.Size())
 		}
 		return nil
@@ -141,30 +142,4 @@ func (w *Watcher) Errors() <-chan error     { return w.errors }
 func (w *Watcher) Close() error {
 	close(w.done)
 	return w.fsw.Close()
-}
-
-func hasPrefix(path, prefix string) bool {
-	if prefix == "" {
-		return false
-	}
-	rel, err := filepath.Rel(filepath.Clean(prefix), path)
-	if err != nil {
-		return false
-	}
-	if rel == "." || strings.HasPrefix(rel, "..") {
-		return false
-	}
-	return true
-}
-
-var videoExts = map[string]bool{
-	".mkv": true, ".mp4": true, ".ts": true, ".iso": true,
-}
-
-func shouldEmit(path string, size, minSize int64) bool {
-	ext := strings.ToLower(filepath.Ext(path))
-	if !videoExts[ext] {
-		return false
-	}
-	return size > minSize
 }

@@ -59,7 +59,7 @@ jobs:
         working-directory: cloud-sync
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
-            -ldflags="-s -w -X main.version=dev-${{ steps.sha.outputs.stamp }} -X main.commit=${GITHUB_SHA} -X main.buildTime=${{ steps.sha.outputs.iso }}" \
+            -ldflags="-s -w -X cloud-sync/internal/buildinfo.Version=dev-${{ steps.sha.outputs.stamp }} -X cloud-sync/internal/buildinfo.Commit=${GITHUB_SHA} -X cloud-sync/internal/buildinfo.BuildTime=${{ steps.sha.outputs.iso }}" \
             -o cloud-sync .
 
       - name: Upload binary

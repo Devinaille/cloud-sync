@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"fmt"
@@ -35,7 +35,7 @@ type Config struct {
 	TasksEnabled bool
 }
 
-const minFileSizeBytes = 100 * 1024 * 1024 // 100MB
+const MinFileSizeBytes = 100 * 1024 * 1024 // 100MB
 
 // fileConfig is the on-disk YAML shape. Field names map 1:1 to env names
 // (snake_case). Durations are stored as integer counts of seconds/hours so
@@ -153,7 +153,7 @@ func loadWithFile(path string) (*Config, error) {
 }
 
 func loadFromEnv() (*Config, error) {
-	cfg := &Config{MinFileSize: minFileSizeBytes}
+	cfg := &Config{MinFileSize: MinFileSizeBytes}
 
 	strs := []struct {
 		env string

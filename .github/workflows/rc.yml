@@ -71,7 +71,7 @@ jobs:
         working-directory: cloud-sync
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
-            -ldflags="-s -w -X main.version=${{ steps.ver.outputs.tag }} -X main.commit=${{ steps.ver.outputs.commit }} -X main.buildTime=${{ steps.ver.outputs.iso }}" \
+            -ldflags="-s -w -X cloud-sync/internal/buildinfo.Version=${{ steps.ver.outputs.tag }} -X cloud-sync/internal/buildinfo.Commit=${{ steps.ver.outputs.commit }} -X cloud-sync/internal/buildinfo.BuildTime=${{ steps.ver.outputs.iso }}" \
             -o cloud-sync .
 
       - name: Package tarball + checksums

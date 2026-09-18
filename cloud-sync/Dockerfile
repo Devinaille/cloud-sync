@@ -9,7 +9,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build \
-      -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildTime=${BUILD_TIME}" \
+      -ldflags="-s -w -X cloud-sync/internal/buildinfo.Version=${VERSION} -X cloud-sync/internal/buildinfo.Commit=${COMMIT} -X cloud-sync/internal/buildinfo.BuildTime=${BUILD_TIME}" \
       -o /out/cloud-sync .
 
 FROM gcr.io/distroless/static-debian12:nonroot

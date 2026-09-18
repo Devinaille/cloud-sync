@@ -1,4 +1,4 @@
-package main
+package pipeline
 
 import (
 	"context"
@@ -9,25 +9,31 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"cloud-sync/internal/config"
+	"cloud-sync/internal/media"
+	"cloud-sync/internal/openlist"
+	"cloud-sync/internal/state"
+	"cloud-sync/internal/watcher"
 )
 
 type Uploader interface {
 	Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string, overwrite bool) (string, error)
-	TaskDone(ctx context.Context, taskID string) (TaskStatus, error)
+	TaskDone(ctx context.Context, taskID string) (openlist.TaskStatus, error)
 }
 
 type Pipeline struct {
-	cfg *Config
+	cfg *config.Config
 	log *slog.Logger
 	up  Uploader
-	st  *StateManager
+	st  *state.StateManager
 	sem chan struct{}
 
 	inflightMu sync.Mutex
 	inflight   map[string]struct{}
 }
 
-func NewPipeline(cfg *Config, log *slog.Logger, up Uploader, st *StateManager) *Pipeline {
+func NewPipeline(cfg *config.Config, log *slog.Logger, up Uploader, st *state.StateManager) *Pipeline {
 	return &Pipeline{
 		cfg:      cfg,
 		log:      log,
@@ -40,7 +46,7 @@ func NewPipeline(cfg *Config, log *slog.Logger, up Uploader, st *StateManager) *
 
 // Run consumes events until ctx is cancelled or the channel is closed. Each
 // event spawns a goroutine that runs the state machine.
-func (p *Pipeline) Run(ctx context.Context, events <-chan FileEvent) {
+func (p *Pipeline) Run(ctx context.Context, events <-chan watcher.FileEvent) {
 	var wg sync.WaitGroup
 	for {
 		select {
@@ -53,7 +59,7 @@ func (p *Pipeline) Run(ctx context.Context, events <-chan FileEvent) {
 				return
 			}
 			wg.Add(1)
-			go func(ev FileEvent) {
+			go func(ev watcher.FileEvent) {
 				defer wg.Done()
 				p.process(ctx, ev)
 			}(ev)
@@ -62,9 +68,9 @@ func (p *Pipeline) Run(ctx context.Context, events <-chan FileEvent) {
 }
 
 // Process sends one file through the same state machine used by Run.
-func (p *Pipeline) Process(ctx context.Context, ev FileEvent) { p.process(ctx, ev) }
+func (p *Pipeline) Process(ctx context.Context, ev watcher.FileEvent) { p.process(ctx, ev) }
 
-func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
+func (p *Pipeline) process(ctx context.Context, ev watcher.FileEvent) {
 	info, err := os.Stat(ev.Path)
 	if err != nil {
 		p.log.Warn("pipeline: stat failed", "path", ev.Path, "err", err)
@@ -72,7 +78,7 @@ func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
 	}
 
 	// validate: whitelist + minimum size.
-	if !whitelisted(ev.Path, p.cfg.AllowedPrefixes) {
+	if !media.Whitelisted(ev.Path, p.cfg.AllowedPrefixes) {
 		p.log.Warn("pipeline: path not whitelisted", "path", ev.Path)
 		return
 	}
@@ -158,7 +164,7 @@ func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
 func (p *Pipeline) computeKey(absPath string) (key, srcDir, srcName, dstDir, dstName string) {
 	var root string
 	for _, r := range p.cfg.WatchDirs {
-		if hasPrefix(absPath, r) {
+		if media.HasPrefix(absPath, r) {
 			root = r
 			break
 		}
@@ -224,16 +230,16 @@ func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcDir, sr
 				break // retry whole task
 			}
 			switch st {
-			case TaskPending:
+			case openlist.TaskPending:
 				if !sleepCtx(ctx, p.cfg.PollInterval) {
 					cancel()
 					return ctx.Err()
 				}
 				continue
-			case TaskSucceeded:
+			case openlist.TaskSucceeded:
 				cancel()
 				now := time.Now().UTC()
-				rec := &StatusRecord{
+				rec := &state.StatusRecord{
 					Key:            key,
 					SrcPath:        absPath,
 					SrcSize:        info.Size(),
@@ -249,7 +255,7 @@ func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcDir, sr
 				}
 				p.log.Info("pipeline: synced", "key", key, "task_id", taskID)
 				return nil
-			case TaskFailed:
+			case openlist.TaskFailed:
 				cancel()
 				lastErr = fmt.Errorf("openlist task failed")
 				goto RETRY
@@ -318,18 +324,9 @@ func statSafe(p string) (int64, time.Time) {
 	return info.Size(), info.ModTime()
 }
 
-func whitelisted(path string, prefixes []string) bool {
-	for _, p := range prefixes {
-		if hasPrefix(path, p) {
-			return true
-		}
-	}
-	return false
-}
-
 func (p *Pipeline) writeFailed(key, absPath string, info os.FileInfo, cause error) {
 	now := time.Now().UTC()
-	rec := &StatusRecord{
+	rec := &state.StatusRecord{
 		Key:       key,
 		SrcPath:   absPath,
 		SrcSize:   info.Size(),
@@ -359,7 +356,7 @@ func (p *Pipeline) StartupScan(ctx context.Context) error {
 			if info.IsDir() {
 				return nil
 			}
-			if !shouldEmit(path, info.Size(), p.cfg.MinFileSize) {
+			if !media.ShouldEmit(path, info.Size(), p.cfg.MinFileSize) {
 				return nil
 			}
 			// Skip files that already have a sync record so a restart only
@@ -370,13 +367,13 @@ func (p *Pipeline) StartupScan(ctx context.Context) error {
 					return nil
 				}
 			}
-			ev := FileEvent{Path: path, Size: info.Size(), Detected: time.Now()}
+			ev := watcher.FileEvent{Path: path, Size: info.Size(), Detected: time.Now()}
 			queued++
 			// Process concurrently like the watcher path: each file waits its
 			// own stabilize window in parallel instead of one file per window.
 			// Upload concurrency is still bounded by the semaphore in process().
 			wg.Add(1)
-			go func(ev FileEvent) {
+			go func(ev watcher.FileEvent) {
 				defer wg.Done()
 				p.process(ctx, ev)
 			}(ev)
