@@ -18,6 +18,7 @@ import (
 	"cloud-sync/internal/config"
 	"cloud-sync/internal/media"
 	"cloud-sync/internal/state"
+	"cloud-sync/internal/supervisor"
 	"cloud-sync/internal/watcher"
 )
 
@@ -448,7 +449,7 @@ func (w *WebServer) handlePrecheck(rw http.ResponseWriter, r *http.Request) {
 
 // ---- helpers -----------------------------------------------------------
 
-func statusPayload(ctx context.Context, sup *Supervisor) statusResponse {
+func statusPayload(ctx context.Context, sup *supervisor.Supervisor) statusResponse {
 	cfg, st, _, ok := sup.Snapshot()
 	if !ok {
 		errMsg := sup.LastError()

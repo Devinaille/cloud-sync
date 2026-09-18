@@ -18,12 +18,19 @@ import (
 	"cloud-sync/internal/mockopenlist"
 	"cloud-sync/internal/pipeline"
 	"cloud-sync/internal/state"
+	"cloud-sync/internal/supervisor"
 	"cloud-sync/internal/testutil"
 )
 
+// mockUploaderFactory returns a Supervisor uploader factory backed by a fresh
+// in-memory mock, so tests never touch a real OpenList.
+func mockUploaderFactory() func(cfg *config.Config, log *slog.Logger) pipeline.Uploader {
+	return func(cfg *config.Config, log *slog.Logger) pipeline.Uploader { return mockopenlist.New() }
+}
+
 // apiTestEnv bundles a started Supervisor and its temp dirs for API tests.
 type apiTestEnv struct {
-	sup     *Supervisor
+	sup     *supervisor.Supervisor
 	up      *mockopenlist.Uploader
 	watch   string
 	syncDir string
@@ -59,7 +66,7 @@ func newTestSupervisor(t *testing.T) *apiTestEnv {
 	cfg.CleanupDryRun = true
 
 	up := mockopenlist.New()
-	sup := NewSupervisor(cfgPath, cfg, testutil.TestLogger(), SupervisorDeps{
+	sup := supervisor.NewSupervisor(cfgPath, cfg, testutil.TestLogger(), supervisor.SupervisorDeps{
 		NewUploader: func(c *config.Config, l *slog.Logger) pipeline.Uploader { return up },
 	})
 	if err := sup.Start(context.Background()); err != nil {
@@ -156,7 +163,7 @@ func TestAPI_Status_OK(t *testing.T) {
 
 func TestAPI_Status_Degraded(t *testing.T) {
 	cfg := testutil.TestConfig(t)
-	sup := NewSupervisor("", cfg, testutil.TestLogger(), SupervisorDeps{NewUploader: mockUploaderFactory()})
+	sup := supervisor.NewSupervisor("", cfg, testutil.TestLogger(), supervisor.SupervisorDeps{NewUploader: mockUploaderFactory()})
 	srv := httptest.NewServer(NewWebServer(sup, testutil.TestLogger()).Handler())
 	defer srv.Close()
 

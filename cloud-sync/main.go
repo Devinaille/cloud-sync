@@ -10,6 +10,7 @@ import (
 	"cloud-sync/internal/buildinfo"
 	"cloud-sync/internal/config"
 	"cloud-sync/internal/logging"
+	"cloud-sync/internal/supervisor"
 )
 
 func main() {
@@ -39,7 +40,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	sup := NewSupervisor(cfgPath, cfg, log, SupervisorDeps{})
+	sup := supervisor.NewSupervisor(cfgPath, cfg, log, supervisor.SupervisorDeps{})
 	if err := sup.Start(ctx); err != nil {
 		log.Error("initial start failed; web UI (if enabled) remains available", "err", err)
 	}
