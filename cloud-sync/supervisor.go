@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"cloud-sync/internal/cleanup"
 	"cloud-sync/internal/config"
 	"cloud-sync/internal/logging"
 	"cloud-sync/internal/openlist"
@@ -30,7 +31,7 @@ type Generation struct {
 	state    *state.StateManager
 	watcher  *watcher.Watcher
 	pipeline *pipeline.Pipeline
-	cleanup  *Cleanup
+	cleanup  *cleanup.Cleanup
 	ctx      context.Context
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
@@ -146,7 +147,7 @@ func (s *Supervisor) Start(ctx context.Context) error {
 		return err
 	}
 	pl := pipeline.NewPipeline(cfg, log, up, st)
-	cl := NewCleanup(cfg, log, st)
+	cl := cleanup.NewCleanup(cfg, log, st)
 
 	genCtx, cancel := context.WithCancel(baseCtx)
 	g := &Generation{
@@ -461,7 +462,7 @@ func (s *Supervisor) CloudExists(ctx context.Context, path string) (bool, error)
 // returns the running generation's Cleanup, or a throwaway one built from the
 // current config/state when paused (so cleanup can run without tasks). It
 // returns nil only when the supervisor is not initialized.
-func (s *Supervisor) Cleanup() *Cleanup {
+func (s *Supervisor) Cleanup() *cleanup.Cleanup {
 	s.mu.RLock()
 	g := s.gen
 	cfg := s.cfg
@@ -475,7 +476,7 @@ func (s *Supervisor) Cleanup() *Cleanup {
 	if cfg == nil || st == nil {
 		return nil
 	}
-	return NewCleanup(cfg, log, st)
+	return cleanup.NewCleanup(cfg, log, st)
 }
 
 // ProcessOne runs a single file through the pipeline. When tasks are running it
