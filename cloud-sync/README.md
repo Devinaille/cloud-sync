@@ -290,7 +290,7 @@ YAML 与 env 同名（小写 ↔ 大写）。下表是底层 env 名：
 
 > **默认值说明**：除 `CLEANUP_DRY_RUN`（代码默认 false）、`LOG_FILE`（可选）和 `UI_LISTEN`（代码默认 `:8099`）外，上表数值项**没有代码默认值**——YAML/env 都没设会启动报错。`config.example.yaml` 给出的 72 / 2 / 30 / 3 / 1800 只是推荐示例。
 
-**未通过 env / config 暴露**：`MinFileSize` 硬编码 100 MB（编译时常量）。要调，改源码 `cloud-sync/config.go:minFileSizeBytes` 后重 build。
+**未通过 env / config 暴露**：`MinFileSize` 硬编码 100 MB（编译时常量）。要调，改源码 `cloud-sync/internal/config/config.go:MinFileSizeBytes` 后重 build。
 
 ## Operations
 

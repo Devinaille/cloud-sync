@@ -4,7 +4,7 @@ cloud-sync: a single Go binary that watches local media dirs, uploads to OpenLis
 
 ## Commands
 
-The Go module lives in `cloud-sync/` (`module cloud-sync`, a single `main` package). **Run all Go commands from `cloud-sync/`, not the repo root.**
+The Go module lives in `cloud-sync/` (`module cloud-sync`); only `main.go` is `package main`, all other code is under `internal/`. **Run all Go commands from `cloud-sync/`, not the repo root.**
 
 ```bash
 gofmt -l .                       # must print nothing
@@ -20,15 +20,16 @@ CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o cloud-sync .
 
 ## Layout
 
-- Entrypoint `cloud-sync/main.go`; wiring `supervisor.go` (task generation: watcher + pipeline + cleanup, start/pause/reload).
-- `pipeline.go` state machine: stat → whitelist → size → key → inflight → `AlreadySynced` → stabilize → upload+retry → record. **Do not move the `AlreadySynced` check after `stabilize`** — that made restarts re-scan every file at the 30s stabilize window.
-- `state.go` writes `<sync_status_dir>/<date>/<key>.json` (+ `FAILED/`). `AlreadySynced` is true for **any** status (synced/failed/cleaned), and retry deletes the record first. Default `sync_status_dir` is `/config/.sync_status`; if it isn't persistent, everything re-uploads.
-- `openlist.go` targets OpenList v4: `POST /api/fs/copy` with `names[]` (not `src_name`/`dst_name`) + `skip_existing`/`overwrite`; async task polled via `POST /api/admin/task/copy/info`. Mock: `scripts/mock-openlist.py`.
-- Web assets `cloud-sync/web/` are `//go:embed web`ed in `web.go` — editing `index.html`/`app.js`/`style.css` requires a rebuild; there is no live-reload server.
+- Module root `cloud-sync/`; entrypoint `cloud-sync/main.go` is wiring only. Logic lives under `cloud-sync/internal/`: `config`, `logging`, `buildinfo`, `state`, `openlist`, `media` (shared file-selection predicates), `watcher`, `pipeline`, `cleanup`, `supervisor`, `httpapi`.
+- `internal/supervisor` builds a task generation (watcher + pipeline + cleanup) and supports start/pause/reload.
+- `internal/pipeline` state machine: stat → whitelist → size → key → inflight → `AlreadySynced` → stabilize → upload+retry → record. **Do not move the `AlreadySynced` check after `stabilize`** — that made restarts re-scan every file at the 30s stabilize window.
+- `internal/state` writes `<sync_status_dir>/<date>/<key>.json` (+ `FAILED/`). `AlreadySynced` is true for **any** status (synced/failed/cleaned), and retry deletes the record first. Default `sync_status_dir` is `/config/.sync_status`; if it isn't persistent, everything re-uploads.
+- `internal/openlist` targets OpenList v4: `POST /api/fs/copy` with `names[]` (not `src_name`/`dst_name`) + `skip_existing`/`overwrite`; async task polled via `POST /api/admin/task/copy/info`. Mock server: `scripts/mock-openlist.py`.
+- Web assets `cloud-sync/internal/httpapi/web/` are `//go:embed web`ed in `internal/httpapi/web.go` — editing `index.html`/`app.js`/`style.css` requires a rebuild; there is no live-reload server.
 
 ## Testing quirks
 
-- Tests inject uploaders via `SupervisorDeps.NewUploader` (`mockUploader`); no real OpenList needed. `newTestSupervisor` sleeps ~50ms for the startup scan and registers `t.Cleanup(sup.Stop)`.
+- Tests inject uploaders via `SupervisorDeps.NewUploader` (fake in `internal/mockopenlist`, shared fixtures in `internal/testutil`); no real OpenList needed. `newTestSupervisor` sleeps ~50ms for the startup scan and registers `t.Cleanup(sup.Stop)`.
 - `-race` matters: concurrency guards are deliberate (`Generation.mu`+`stopped` for `Enqueue`; `oneOffMu`/`shuttingDown` for `ProcessOne`). Keep the Add-under-lock-before-Wait pattern intact.
 - Retry and cleanup are allowed while tasks are paused via a one-off pipeline/cleanup (`Supervisor.ProcessOne`, transient `Cleanup`). `Pause` must NOT set `shuttingDown` — only the final `Stop` does.
 
