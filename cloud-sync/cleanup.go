@@ -1,14 +1,15 @@
 package main
 
 import (
-	"cloud-sync/internal/config"
-	"cloud-sync/internal/state"
 	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"cloud-sync/internal/config"
+	"cloud-sync/internal/state"
 )
 
 type Cleanup struct {

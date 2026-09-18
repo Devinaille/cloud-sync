@@ -1,9 +1,6 @@
 package main
 
 import (
-	"cloud-sync/internal/config"
-	"cloud-sync/internal/openlist"
-	"cloud-sync/internal/state"
 	"context"
 	"fmt"
 	"log/slog"
@@ -12,6 +9,10 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"cloud-sync/internal/config"
+	"cloud-sync/internal/openlist"
+	"cloud-sync/internal/state"
 )
 
 type Uploader interface {

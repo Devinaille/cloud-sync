@@ -2,8 +2,6 @@ package main
 
 import (
 	"bytes"
-	"cloud-sync/internal/config"
-	"cloud-sync/internal/state"
 	"context"
 	"encoding/json"
 	"io"
@@ -15,12 +13,17 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"cloud-sync/internal/config"
+	"cloud-sync/internal/mockopenlist"
+	"cloud-sync/internal/state"
+	"cloud-sync/internal/testutil"
 )
 
 // apiTestEnv bundles a started Supervisor and its temp dirs for API tests.
 type apiTestEnv struct {
 	sup     *Supervisor
-	up      *mockUploader
+	up      *mockopenlist.Uploader
 	watch   string
 	syncDir string
 	cfgPath string
@@ -32,7 +35,7 @@ type apiTestEnv struct {
 // stabilize/poll, cleanup dry-run) keep the tests quick and non-destructive.
 func newTestSupervisor(t *testing.T) *apiTestEnv {
 	t.Helper()
-	preserveLoadEnv(t)
+	testutil.PreserveLoadEnv(t)
 
 	dir := t.TempDir()
 	watch := filepath.Join(dir, "media")
@@ -43,7 +46,7 @@ func newTestSupervisor(t *testing.T) *apiTestEnv {
 		}
 	}
 	cfgPath := filepath.Join(dir, "cloud-sync.yaml")
-	writeSupervisorYAML(t, cfgPath, watch, syncDir, 2)
+	testutil.WriteConfigYAML(t, cfgPath, watch, syncDir, 2)
 
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
@@ -54,8 +57,8 @@ func newTestSupervisor(t *testing.T) *apiTestEnv {
 	cfg.PollInterval = 10 * time.Millisecond
 	cfg.CleanupDryRun = true
 
-	up := newMockUploader()
-	sup := NewSupervisor(cfgPath, cfg, supervisorTestLogger(), SupervisorDeps{
+	up := mockopenlist.New()
+	sup := NewSupervisor(cfgPath, cfg, testutil.TestLogger(), SupervisorDeps{
 		NewUploader: func(c *config.Config, l *slog.Logger) Uploader { return up },
 	})
 	if err := sup.Start(context.Background()); err != nil {
@@ -72,7 +75,7 @@ func newTestSupervisor(t *testing.T) *apiTestEnv {
 
 func (e *apiTestEnv) server(t *testing.T) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(NewWebServer(e.sup, supervisorTestLogger()).Handler())
+	srv := httptest.NewServer(NewWebServer(e.sup, testutil.TestLogger()).Handler())
 	t.Cleanup(srv.Close)
 	return srv
 }
@@ -151,9 +154,9 @@ func TestAPI_Status_OK(t *testing.T) {
 }
 
 func TestAPI_Status_Degraded(t *testing.T) {
-	cfg := supervisorTestCfg(t)
-	sup := NewSupervisor("", cfg, supervisorTestLogger(), SupervisorDeps{NewUploader: mockUploaderFactory()})
-	srv := httptest.NewServer(NewWebServer(sup, supervisorTestLogger()).Handler())
+	cfg := testutil.TestConfig(t)
+	sup := NewSupervisor("", cfg, testutil.TestLogger(), SupervisorDeps{NewUploader: mockUploaderFactory()})
+	srv := httptest.NewServer(NewWebServer(sup, testutil.TestLogger()).Handler())
 	defer srv.Close()
 
 	var body struct {
@@ -370,9 +373,9 @@ func TestAPI_Retry_DeletesAndEnqueues(t *testing.T) {
 	// temp dirs are removed.
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		env.up.mu.Lock()
-		n := len(env.up.copyCalls)
-		env.up.mu.Unlock()
+		env.up.Mu.Lock()
+		n := len(env.up.CopyCalls)
+		env.up.Mu.Unlock()
 		if n > 0 {
 			break
 		}
@@ -594,7 +597,7 @@ func TestAPI_Precheck_CloudExists(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Pretend the file already exists on the cloud.
-	env.up.cloudExists = map[string]bool{"/139yun_media/media/Movies/A.mkv": true}
+	env.up.CloudExists = map[string]bool{"/139yun_media/media/Movies/A.mkv": true}
 
 	var rep precheckReport
 	if code := doJSON(t, http.MethodPost, srv.URL+"/api/precheck", map[string]any{}, &rep); code != http.StatusOK {

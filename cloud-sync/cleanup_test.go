@@ -1,8 +1,6 @@
 package main
 
 import (
-	"cloud-sync/internal/config"
-	"cloud-sync/internal/state"
 	"context"
 	"io"
 	"log/slog"
@@ -11,6 +9,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"cloud-sync/internal/config"
+	"cloud-sync/internal/state"
 )
 
 func newTestCleanup(t *testing.T, dryRun bool) (*Cleanup, *state.StateManager, string) {
