@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"cloud-sync/internal/config"
+	"cloud-sync/internal/media"
 	"cloud-sync/internal/state"
 )
 
@@ -67,7 +68,7 @@ func (c *Cleanup) tick(ctx context.Context, now time.Time) (int, error) {
 			break
 		}
 		// Defensive whitelist re-check (spec §3.7).
-		if !whitelisted(rec.SrcPath, c.cfg.AllowedPrefixes) {
+		if !media.Whitelisted(rec.SrcPath, c.cfg.AllowedPrefixes) {
 			c.log.Error("cleanup blocked: path not in whitelist", "path", rec.SrcPath)
 			continue
 		}

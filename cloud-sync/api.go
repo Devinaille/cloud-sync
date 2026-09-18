@@ -16,6 +16,7 @@ import (
 
 	"cloud-sync/internal/buildinfo"
 	"cloud-sync/internal/config"
+	"cloud-sync/internal/media"
 	"cloud-sync/internal/state"
 )
 
@@ -575,7 +576,7 @@ func recordToItem(rec *state.StatusRecord) fileItem {
 	return item
 }
 
-// unsyncedFiles walks every watch dir for video files that pass shouldEmit and
+// unsyncedFiles walks every watch dir for video files that pass media.ShouldEmit and
 // have no record yet. Returned records carry Key/SrcPath/SrcSize and a
 // synthetic "unsynced" status.
 func unsyncedFiles(cfg *config.Config, st *state.StateManager) ([]*state.StatusRecord, error) {
@@ -588,7 +589,7 @@ func unsyncedFiles(cfg *config.Config, st *state.StateManager) ([]*state.StatusR
 			if info.IsDir() {
 				return nil
 			}
-			if !shouldEmit(p, info.Size(), cfg.MinFileSize) {
+			if !media.ShouldEmit(p, info.Size(), cfg.MinFileSize) {
 				return nil
 			}
 			key, ok := keyForPath(cfg.WatchDirs, p)
@@ -639,7 +640,7 @@ func runPrecheck(ctx context.Context, cfg *config.Config, st *state.StateManager
 				return nil
 			}
 			rep.Scanned++
-			if !videoExts[strings.ToLower(filepath.Ext(p))] {
+			if !media.IsVideoExt(p) {
 				rep.SkippedExt++
 				return nil
 			}
@@ -763,7 +764,7 @@ func applyCloudStatus(cfg *config.Config, items []fileItem) {
 // contains path.
 func keyForPath(roots []string, path string) (string, bool) {
 	for _, root := range roots {
-		if !hasPrefix(path, root) {
+		if !media.HasPrefix(path, root) {
 			continue
 		}
 		rel, err := filepath.Rel(root, path)

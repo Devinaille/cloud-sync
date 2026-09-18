@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"cloud-sync/internal/config"
+	"cloud-sync/internal/media"
 	"cloud-sync/internal/openlist"
 	"cloud-sync/internal/state"
 )
@@ -76,7 +77,7 @@ func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
 	}
 
 	// validate: whitelist + minimum size.
-	if !whitelisted(ev.Path, p.cfg.AllowedPrefixes) {
+	if !media.Whitelisted(ev.Path, p.cfg.AllowedPrefixes) {
 		p.log.Warn("pipeline: path not whitelisted", "path", ev.Path)
 		return
 	}
@@ -162,7 +163,7 @@ func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
 func (p *Pipeline) computeKey(absPath string) (key, srcDir, srcName, dstDir, dstName string) {
 	var root string
 	for _, r := range p.cfg.WatchDirs {
-		if hasPrefix(absPath, r) {
+		if media.HasPrefix(absPath, r) {
 			root = r
 			break
 		}
@@ -322,15 +323,6 @@ func statSafe(p string) (int64, time.Time) {
 	return info.Size(), info.ModTime()
 }
 
-func whitelisted(path string, prefixes []string) bool {
-	for _, p := range prefixes {
-		if hasPrefix(path, p) {
-			return true
-		}
-	}
-	return false
-}
-
 func (p *Pipeline) writeFailed(key, absPath string, info os.FileInfo, cause error) {
 	now := time.Now().UTC()
 	rec := &state.StatusRecord{
@@ -363,7 +355,7 @@ func (p *Pipeline) StartupScan(ctx context.Context) error {
 			if info.IsDir() {
 				return nil
 			}
-			if !shouldEmit(path, info.Size(), p.cfg.MinFileSize) {
+			if !media.ShouldEmit(path, info.Size(), p.cfg.MinFileSize) {
 				return nil
 			}
 			// Skip files that already have a sync record so a restart only
