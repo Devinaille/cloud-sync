@@ -14,6 +14,7 @@ import (
 	"cloud-sync/internal/media"
 	"cloud-sync/internal/openlist"
 	"cloud-sync/internal/state"
+	"cloud-sync/internal/watcher"
 )
 
 type Uploader interface {
@@ -45,7 +46,7 @@ func NewPipeline(cfg *config.Config, log *slog.Logger, up Uploader, st *state.St
 
 // Run consumes events until ctx is cancelled or the channel is closed. Each
 // event spawns a goroutine that runs the state machine.
-func (p *Pipeline) Run(ctx context.Context, events <-chan FileEvent) {
+func (p *Pipeline) Run(ctx context.Context, events <-chan watcher.FileEvent) {
 	var wg sync.WaitGroup
 	for {
 		select {
@@ -58,7 +59,7 @@ func (p *Pipeline) Run(ctx context.Context, events <-chan FileEvent) {
 				return
 			}
 			wg.Add(1)
-			go func(ev FileEvent) {
+			go func(ev watcher.FileEvent) {
 				defer wg.Done()
 				p.process(ctx, ev)
 			}(ev)
@@ -67,9 +68,9 @@ func (p *Pipeline) Run(ctx context.Context, events <-chan FileEvent) {
 }
 
 // Process sends one file through the same state machine used by Run.
-func (p *Pipeline) Process(ctx context.Context, ev FileEvent) { p.process(ctx, ev) }
+func (p *Pipeline) Process(ctx context.Context, ev watcher.FileEvent) { p.process(ctx, ev) }
 
-func (p *Pipeline) process(ctx context.Context, ev FileEvent) {
+func (p *Pipeline) process(ctx context.Context, ev watcher.FileEvent) {
 	info, err := os.Stat(ev.Path)
 	if err != nil {
 		p.log.Warn("pipeline: stat failed", "path", ev.Path, "err", err)
@@ -366,13 +367,13 @@ func (p *Pipeline) StartupScan(ctx context.Context) error {
 					return nil
 				}
 			}
-			ev := FileEvent{Path: path, Size: info.Size(), Detected: time.Now()}
+			ev := watcher.FileEvent{Path: path, Size: info.Size(), Detected: time.Now()}
 			queued++
 			// Process concurrently like the watcher path: each file waits its
 			// own stabilize window in parallel instead of one file per window.
 			// Upload concurrency is still bounded by the semaphore in process().
 			wg.Add(1)
-			go func(ev FileEvent) {
+			go func(ev watcher.FileEvent) {
 				defer wg.Done()
 				p.process(ctx, ev)
 			}(ev)

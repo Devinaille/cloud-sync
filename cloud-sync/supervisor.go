@@ -12,6 +12,7 @@ import (
 	"cloud-sync/internal/logging"
 	"cloud-sync/internal/openlist"
 	"cloud-sync/internal/state"
+	"cloud-sync/internal/watcher"
 )
 
 // SupervisorDeps are the injectable factories the Supervisor uses to build a
@@ -26,7 +27,7 @@ type Generation struct {
 	cfg      *config.Config
 	uploader Uploader
 	state    *state.StateManager
-	watcher  *Watcher
+	watcher  *watcher.Watcher
 	pipeline *Pipeline
 	cleanup  *Cleanup
 	ctx      context.Context
@@ -138,7 +139,7 @@ func (s *Supervisor) Start(ctx context.Context) error {
 			log.Warn("openlist ping failed; starting anyway", "err", err)
 		}
 	}
-	w, err := NewWatcher(cfg.WatchDirs, cfg.MinFileSize, log)
+	w, err := watcher.NewWatcher(cfg.WatchDirs, cfg.MinFileSize, log)
 	if err != nil {
 		s.setLastErr(err)
 		return err
@@ -482,7 +483,7 @@ func (s *Supervisor) Cleanup() *Cleanup {
 // supervisor-level WaitGroup so Stop waits for it. This is what lets a
 // single-file retry work without starting tasks. The run uses the long-lived
 // base context, not the caller's, so it is not cancelled when the request ends.
-func (s *Supervisor) ProcessOne(ctx context.Context, ev FileEvent) error {
+func (s *Supervisor) ProcessOne(ctx context.Context, ev watcher.FileEvent) error {
 	s.mu.RLock()
 	g := s.gen
 	cfg := s.cfg
@@ -520,7 +521,7 @@ func (s *Supervisor) ProcessOne(ctx context.Context, ev FileEvent) error {
 // Enqueue runs Process for one event on the current generation, tracked by the
 // generation WaitGroup and cancelled when the generation stops. Unlike a bare
 // goroutine it is drained by Stop/Reload, so it cannot outlive its generation.
-func (s *Supervisor) Enqueue(ev FileEvent) error {
+func (s *Supervisor) Enqueue(ev watcher.FileEvent) error {
 	s.mu.RLock()
 	g := s.gen
 	s.mu.RUnlock()

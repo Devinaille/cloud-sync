@@ -18,6 +18,7 @@ import (
 	"cloud-sync/internal/config"
 	"cloud-sync/internal/media"
 	"cloud-sync/internal/state"
+	"cloud-sync/internal/watcher"
 )
 
 const (
@@ -357,7 +358,7 @@ func (w *WebServer) handleRetry(rw http.ResponseWriter, r *http.Request) {
 		// run, or runs it on a throwaway pipeline when paused so a retry works
 		// without starting tasks. Either way it is drained on Stop, unlike a
 		// bare goroutine that could write state after shutdown.
-		if err := w.sup.ProcessOne(r.Context(), FileEvent{Path: src, Size: size, Detected: time.Now()}); err != nil {
+		if err := w.sup.ProcessOne(r.Context(), watcher.FileEvent{Path: src, Size: size, Detected: time.Now()}); err != nil {
 			results = append(results, retryResult{Key: key, OK: false, Error: err.Error()})
 			continue
 		}

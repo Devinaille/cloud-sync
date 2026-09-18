@@ -15,6 +15,7 @@ import (
 	"cloud-sync/internal/mockopenlist"
 	"cloud-sync/internal/openlist"
 	"cloud-sync/internal/state"
+	"cloud-sync/internal/watcher"
 )
 
 func newTestPipeline(t *testing.T) (*Pipeline, *mockopenlist.Uploader, *state.StateManager, string) {
@@ -76,8 +77,8 @@ func TestPipeline_HappyPath(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	events := make(chan FileEvent, 1)
-	events <- FileEvent{Path: filepath.Join(mediaDir, "Movies/X.mkv"), Size: 4096, Detected: time.Now()}
+	events := make(chan watcher.FileEvent, 1)
+	events <- watcher.FileEvent{Path: filepath.Join(mediaDir, "Movies/X.mkv"), Size: 4096, Detected: time.Now()}
 	close(events)
 
 	done := make(chan struct{})
@@ -113,7 +114,7 @@ func TestPipeline_Process_Enqueues(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	p.Process(ctx, FileEvent{Path: filepath.Join(mediaDir, "Movies/P.mkv"), Size: 4096, Detected: time.Now()})
+	p.Process(ctx, watcher.FileEvent{Path: filepath.Join(mediaDir, "Movies/P.mkv"), Size: 4096, Detected: time.Now()})
 
 	up.Mu.Lock()
 	defer up.Mu.Unlock()
@@ -133,8 +134,8 @@ func TestPipeline_WritesAbsoluteSrcPath(t *testing.T) {
 	src := filepath.Join(mediaDir, "Movies/Z.mkv")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	events := make(chan FileEvent, 1)
-	events <- FileEvent{Path: src, Size: 4096, Detected: time.Now()}
+	events := make(chan watcher.FileEvent, 1)
+	events <- watcher.FileEvent{Path: src, Size: 4096, Detected: time.Now()}
 	close(events)
 
 	done := make(chan struct{})
@@ -190,8 +191,8 @@ func TestPipeline_RetriesOnTransientCopyError(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	events := make(chan FileEvent, 1)
-	events <- FileEvent{Path: filepath.Join(mediaDir, "X.mkv"), Size: 4096, Detected: time.Now()}
+	events := make(chan watcher.FileEvent, 1)
+	events <- watcher.FileEvent{Path: filepath.Join(mediaDir, "X.mkv"), Size: 4096, Detected: time.Now()}
 	close(events)
 	done := make(chan struct{})
 	go func() { p.Run(ctx, events); close(done) }()
@@ -215,8 +216,8 @@ func TestPipeline_SkipsAlreadySynced(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	events := make(chan FileEvent, 1)
-	events <- FileEvent{Path: filepath.Join(mediaDir, "Movies/Y.mkv"), Size: 4096, Detected: time.Now()}
+	events := make(chan watcher.FileEvent, 1)
+	events <- watcher.FileEvent{Path: filepath.Join(mediaDir, "Movies/Y.mkv"), Size: 4096, Detected: time.Now()}
 	close(events)
 	done := make(chan struct{})
 	go func() { p.Run(ctx, events); close(done) }()
@@ -320,8 +321,8 @@ func TestPipeline_NoFailedRecordOnParentCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	events := make(chan FileEvent, 1)
-	events <- FileEvent{Path: filepath.Join(mediaDir, "Movies/Cancel.mkv"), Size: 4096, Detected: time.Now()}
+	events := make(chan watcher.FileEvent, 1)
+	events <- watcher.FileEvent{Path: filepath.Join(mediaDir, "Movies/Cancel.mkv"), Size: 4096, Detected: time.Now()}
 	close(events)
 	done := make(chan struct{})
 	go func() { p.Run(ctx, events); close(done) }()
@@ -384,8 +385,8 @@ func TestPipeline_RetryExhaustionNoTrailingSleep(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	events := make(chan FileEvent, 1)
-	events <- FileEvent{Path: filepath.Join(mediaDir, "Movies/Exhaust.mkv"), Size: 4096, Detected: time.Now()}
+	events := make(chan watcher.FileEvent, 1)
+	events <- watcher.FileEvent{Path: filepath.Join(mediaDir, "Movies/Exhaust.mkv"), Size: 4096, Detected: time.Now()}
 	close(events)
 
 	start := time.Now()
@@ -479,9 +480,9 @@ func TestPipeline_DedupesConcurrentEventsForSameKey(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	events := make(chan FileEvent, 2)
-	events <- FileEvent{Path: filepath.Join(mediaDir, "Movies/Dup.mkv"), Size: 4096, Detected: time.Now()}
-	events <- FileEvent{Path: filepath.Join(mediaDir, "Movies/Dup.mkv"), Size: 4096, Detected: time.Now()}
+	events := make(chan watcher.FileEvent, 2)
+	events <- watcher.FileEvent{Path: filepath.Join(mediaDir, "Movies/Dup.mkv"), Size: 4096, Detected: time.Now()}
+	events <- watcher.FileEvent{Path: filepath.Join(mediaDir, "Movies/Dup.mkv"), Size: 4096, Detected: time.Now()}
 	close(events)
 	done := make(chan struct{})
 	go func() { p.Run(ctx, events); close(done) }()
@@ -557,7 +558,7 @@ func TestPipeline_Process_SkipsSyncedWithoutStabilize(t *testing.T) {
 	}
 
 	start := time.Now()
-	p.Process(context.Background(), FileEvent{Path: src, Size: 4096, Detected: time.Now()})
+	p.Process(context.Background(), watcher.FileEvent{Path: src, Size: 4096, Detected: time.Now()})
 	if d := time.Since(start); d > time.Second {
 		t.Errorf("Process took %v for an already-synced file; stabilize should be skipped", d)
 	}

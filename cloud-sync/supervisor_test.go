@@ -13,6 +13,7 @@ import (
 	"cloud-sync/internal/mockopenlist"
 	"cloud-sync/internal/openlist"
 	"cloud-sync/internal/testutil"
+	"cloud-sync/internal/watcher"
 )
 
 func mockUploaderFactory() func(cfg *config.Config, log *slog.Logger) Uploader {
@@ -313,7 +314,7 @@ func TestSupervisor_Reload_CtxNotTiedToCallerCtx(t *testing.T) {
 	}
 	// The watcher may also notice the file; Enqueue exercises the same pipeline
 	// and its per-key dedup makes a duplicate harmless.
-	if err := sup.Enqueue(FileEvent{Path: src, Size: config.MinFileSizeBytes + 1, Detected: time.Now()}); err != nil {
+	if err := sup.Enqueue(watcher.FileEvent{Path: src, Size: config.MinFileSizeBytes + 1, Detected: time.Now()}); err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
 
