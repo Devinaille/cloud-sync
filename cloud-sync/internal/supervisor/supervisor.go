@@ -73,6 +73,9 @@ type Supervisor struct {
 	// Reload triggered by an HTTP handler cannot cancel the new generation when
 	// the request returns.
 	baseCtx context.Context
+	// progress is shared by the generation and one-off pipelines so the Web UI
+	// sees in-flight uploads and percentages in both cases.
+	progress *pipeline.ProgressTracker
 	// reloadMu serializes Reload so overlapping config PUTs cannot interleave
 	// their generation teardown/swap.
 	reloadMu sync.Mutex
@@ -86,7 +89,7 @@ func NewSupervisor(cfgPath string, cfg *config.Config, log *slog.Logger, deps Su
 			return openlist.NewClient(cfg.OpenListURL, cfg.OpenListToken, log)
 		}
 	}
-	return &Supervisor{cfgPath: cfgPath, cfg: cfg, log: log, deps: deps, enabled: cfg.TasksEnabled}
+	return &Supervisor{cfgPath: cfgPath, cfg: cfg, log: log, deps: deps, enabled: cfg.TasksEnabled, progress: pipeline.NewProgressTracker()}
 }
 
 // Start builds and launches a generation from the current config. It returns
@@ -146,7 +149,7 @@ func (s *Supervisor) Start(ctx context.Context) error {
 		s.setLastErr(err)
 		return err
 	}
-	pl := pipeline.NewPipeline(cfg, log, up, st)
+	pl := pipeline.NewPipelineWithTracker(cfg, log, up, st, s.progress)
 	cl := cleanup.NewCleanup(cfg, log, st)
 
 	genCtx, cancel := context.WithCancel(baseCtx)
@@ -347,6 +350,12 @@ func (s *Supervisor) TasksRunning() bool {
 	return s.gen != nil
 }
 
+// Inflight returns in-progress uploads (key→percent) across the running
+// generation and any paused one-off retries.
+func (s *Supervisor) Inflight() map[string]float64 {
+	return s.progress.Snapshot()
+}
+
 // Pause stops the running tasks (watcher/pipeline/cleanup) while keeping the
 // Web UI and state manager available. In-flight uploads finish or are safely
 // interrupted (ctx cancel writes no failed record). One-off retries/cleanups
@@ -512,7 +521,7 @@ func (s *Supervisor) ProcessOne(ctx context.Context, ev watcher.FileEvent) error
 	s.oneOffWG.Add(1)
 	s.oneOffMu.Unlock()
 
-	pl := pipeline.NewPipeline(cfg, log, s.deps.NewUploader(cfg, log), st)
+	pl := pipeline.NewPipelineWithTracker(cfg, log, s.deps.NewUploader(cfg, log), st, s.progress)
 	go func() {
 		defer s.oneOffWG.Done()
 		pl.Process(base, ev)

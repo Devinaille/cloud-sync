@@ -19,8 +19,8 @@ func (w *WebServer) handleStatus(rw http.ResponseWriter, r *http.Request) {
 }
 
 func statusPayload(ctx context.Context, sup *supervisor.Supervisor) statusResponse {
-	cfg, st, pl, ok := sup.Snapshot()
-	inflight := inflightOf(pl)
+	cfg, st, _, ok := sup.Snapshot()
+	inflight := sup.Inflight()
 	if !ok {
 		errMsg := sup.LastError()
 		if errMsg == "" {

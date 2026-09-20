@@ -8,18 +8,8 @@ import (
 
 	"cloud-sync/internal/config"
 	"cloud-sync/internal/media"
-	"cloud-sync/internal/pipeline"
 	"cloud-sync/internal/state"
 )
-
-// inflightOf returns the current in-progress uploads, or nil when no pipeline
-// is active.
-func inflightOf(pl *pipeline.Pipeline) map[string]float64 {
-	if pl == nil {
-		return nil
-	}
-	return pl.Inflight()
-}
 
 // applyInflight marks items whose key is currently uploading as "syncing" and
 // attaches their percent complete.

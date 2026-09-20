@@ -333,3 +333,65 @@ func TestSupervisor_Reload_CtxNotTiedToCallerCtx(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+// While tasks are paused, a one-off retry runs on a throwaway pipeline. Its
+// progress must still be visible so the Web UI can show "syncing" instead of
+// falling back to "unsynced".
+func TestSupervisor_ProcessOneProgressVisibleWhilePaused(t *testing.T) {
+	up := mockopenlist.New()
+	up.Mu.Lock()
+	up.TaskPendingCount = 1000
+	up.TaskProgress = 55
+	up.Mu.Unlock()
+
+	cfg := testutil.TestConfig(t)
+	cfg.TasksEnabled = false
+	cfg.PollInterval = 10 * time.Millisecond
+
+	sup := NewSupervisor("", cfg, testutil.TestLogger(), SupervisorDeps{
+		NewUploader: func(c *config.Config, l *slog.Logger) pipeline.Uploader { return up },
+	})
+	if err := sup.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(sup.Stop)
+
+	dir := cfg.WatchDirs[0]
+	src := filepath.Join(dir, "Movies", "One.mkv")
+	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, make([]byte, 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := sup.ProcessOne(context.Background(), watcher.FileEvent{Path: src, Size: 4096, Detected: time.Now()}); err != nil {
+		t.Fatalf("ProcessOne: %v", err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		infl := sup.Inflight()
+		if len(infl) > 0 {
+			if pct, ok := infl["Movies/One.mkv"]; !ok || pct != 55 {
+				t.Fatalf("Inflight() = %v, want Movies/One.mkv=55", infl)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for one-off upload to appear in Inflight()")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// Let it finish and confirm the entry is cleared.
+	up.Mu.Lock()
+	up.TaskPendingCount = 0
+	up.Mu.Unlock()
+	deadline = time.Now().Add(3 * time.Second)
+	for len(sup.Inflight()) != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("Inflight() not cleared: %v", sup.Inflight())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}

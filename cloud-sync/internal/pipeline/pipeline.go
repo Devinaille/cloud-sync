@@ -24,6 +24,42 @@ type Uploader interface {
 	Exists(ctx context.Context, path string) (bool, error)
 }
 
+// ProgressTracker is a concurrency-safe map of in-flight upload percents. It is
+// shared between the supervisor's generation pipeline and any one-off pipelines
+// (e.g. a single retry while tasks are paused) so the Web UI can see progress
+// for both.
+type ProgressTracker struct {
+	mu sync.Mutex
+	m  map[string]float64
+}
+
+func NewProgressTracker() *ProgressTracker {
+	return &ProgressTracker{m: make(map[string]float64)}
+}
+
+func (t *ProgressTracker) set(key string, pct float64) {
+	t.mu.Lock()
+	t.m[key] = pct
+	t.mu.Unlock()
+}
+
+func (t *ProgressTracker) clear(key string) {
+	t.mu.Lock()
+	delete(t.m, key)
+	t.mu.Unlock()
+}
+
+// Snapshot returns a copy of the current key→percent map.
+func (t *ProgressTracker) Snapshot() map[string]float64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make(map[string]float64, len(t.m))
+	for k, v := range t.m {
+		out[k] = v
+	}
+	return out
+}
+
 type Pipeline struct {
 	cfg *config.Config
 	log *slog.Logger
@@ -34,11 +70,19 @@ type Pipeline struct {
 	inflightMu sync.Mutex
 	inflight   map[string]struct{}
 
-	progressMu sync.Mutex
-	progress   map[string]float64
+	progress *ProgressTracker
 }
 
 func NewPipeline(cfg *config.Config, log *slog.Logger, up Uploader, st *state.StateManager) *Pipeline {
+	return NewPipelineWithTracker(cfg, log, up, st, NewProgressTracker())
+}
+
+// NewPipelineWithTracker is like NewPipeline but shares the given tracker so the
+// caller (the supervisor) can observe progress across pipelines.
+func NewPipelineWithTracker(cfg *config.Config, log *slog.Logger, up Uploader, st *state.StateManager, tracker *ProgressTracker) *Pipeline {
+	if tracker == nil {
+		tracker = NewProgressTracker()
+	}
 	return &Pipeline{
 		cfg:      cfg,
 		log:      log,
@@ -46,33 +90,16 @@ func NewPipeline(cfg *config.Config, log *slog.Logger, up Uploader, st *state.St
 		st:       st,
 		sem:      make(chan struct{}, cfg.UploadConcurrency),
 		inflight: make(map[string]struct{}),
-		progress: make(map[string]float64),
+		progress: tracker,
 	}
 }
 
-func (p *Pipeline) setProgress(key string, pct float64) {
-	p.progressMu.Lock()
-	p.progress[key] = pct
-	p.progressMu.Unlock()
-}
-
-func (p *Pipeline) clearProgress(key string) {
-	p.progressMu.Lock()
-	delete(p.progress, key)
-	p.progressMu.Unlock()
-}
+func (p *Pipeline) setProgress(key string, pct float64) { p.progress.set(key, pct) }
+func (p *Pipeline) clearProgress(key string)            { p.progress.clear(key) }
 
 // Inflight returns a snapshot of in-progress uploads mapped to their percent
 // complete (0-100). Keys are present only while an upload is running.
-func (p *Pipeline) Inflight() map[string]float64 {
-	p.progressMu.Lock()
-	defer p.progressMu.Unlock()
-	out := make(map[string]float64, len(p.progress))
-	for k, v := range p.progress {
-		out[k] = v
-	}
-	return out
-}
+func (p *Pipeline) Inflight() map[string]float64 { return p.progress.Snapshot() }
 
 // Run consumes events until ctx is cancelled or the channel is closed. Each
 // event spawns a goroutine that runs the state machine.
