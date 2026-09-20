@@ -19,7 +19,8 @@ func (w *WebServer) handleStatus(rw http.ResponseWriter, r *http.Request) {
 }
 
 func statusPayload(ctx context.Context, sup *supervisor.Supervisor) statusResponse {
-	cfg, st, _, ok := sup.Snapshot()
+	cfg, st, pl, ok := sup.Snapshot()
+	inflight := inflightOf(pl)
 	if !ok {
 		errMsg := sup.LastError()
 		if errMsg == "" {
@@ -97,7 +98,13 @@ func statusPayload(ctx context.Context, sup *supervisor.Supervisor) statusRespon
 		resp.Error = err.Error()
 		return resp
 	}
-	resp.Counts.Unsynced = len(un)
+	for _, rec := range un {
+		if _, busy := inflight[rec.Key]; busy {
+			continue // counted as syncing below
+		}
+		resp.Counts.Unsynced++
+	}
+	resp.Counts.Syncing = len(inflight)
 	return resp
 }
 

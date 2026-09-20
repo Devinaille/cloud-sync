@@ -11,7 +11,7 @@ func (w *WebServer) handleFiles(rw http.ResponseWriter, r *http.Request) {
 		writeError(rw, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	cfg, st, _, ok := w.sup.Snapshot()
+	cfg, st, pl, ok := w.sup.Snapshot()
 	if !ok {
 		writeError(rw, http.StatusServiceUnavailable, "supervisor not running")
 		return
@@ -45,6 +45,7 @@ func (w *WebServer) handleFiles(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applyCloudStatus(cfg, items)
+	applyInflight(items, inflightOf(pl))
 
 	filtered := filterItems(items, state, q.Get("q"))
 	sort.Slice(filtered, func(i, j int) bool { return filtered[i].Key < filtered[j].Key })

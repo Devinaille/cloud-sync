@@ -21,6 +21,7 @@ type statusCounts struct {
 	Failed   int `json:"failed"`
 	Cleaned  int `json:"cleaned"`
 	Unsynced int `json:"unsynced"`
+	Syncing  int `json:"syncing"`
 }
 
 // configView is the effective config exposed by the API. openlist_token is
@@ -45,6 +46,8 @@ type fileItem struct {
 	CleanupAt  string `json:"cleanup_at"`
 	RetryCount int    `json:"retry_count"`
 	Error      string `json:"error"`
+	// Progress is the upload percent (0-100) while State == "syncing".
+	Progress float64 `json:"progress"`
 	// Cloud is the pre-check's cloud-existence result for this file:
 	// "exists" | "missing" | "unknown" | "" (not checked yet).
 	Cloud string `json:"cloud"`

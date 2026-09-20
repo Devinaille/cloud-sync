@@ -148,7 +148,7 @@ func TestAPI_Status_OK(t *testing.T) {
 	if !body.OK {
 		t.Errorf("ok = false, want true")
 	}
-	for _, k := range []string{"synced", "failed", "cleaned", "unsynced"} {
+	for _, k := range []string{"synced", "failed", "cleaned", "unsynced", "syncing"} {
 		if _, ok := body.Counts[k]; !ok {
 			t.Errorf("counts missing %q", k)
 		}
@@ -659,5 +659,24 @@ func TestAPI_Status_BuildInfo(t *testing.T) {
 	}
 	if body.BuildTime == "" {
 		t.Error("build_time empty in /api/status")
+	}
+}
+
+func TestApplyInflight(t *testing.T) {
+	items := []fileItem{
+		{Key: "A", State: "unsynced"},
+		{Key: "B", State: "synced"},
+		{Key: "C", State: "failed"},
+	}
+	applyInflight(items, map[string]float64{"A": 42.5, "C": 7})
+
+	if items[0].State != "syncing" || items[0].Progress != 42.5 {
+		t.Errorf("A = %q/%.1f, want syncing/42.5", items[0].State, items[0].Progress)
+	}
+	if items[1].State != "synced" || items[1].Progress != 0 {
+		t.Errorf("B = %q/%.1f, want unchanged synced/0", items[1].State, items[1].Progress)
+	}
+	if items[2].State != "syncing" || items[2].Progress != 7 {
+		t.Errorf("C = %q/%.1f, want syncing/7", items[2].State, items[2].Progress)
 	}
 }

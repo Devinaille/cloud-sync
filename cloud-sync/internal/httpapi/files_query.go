@@ -8,8 +8,32 @@ import (
 
 	"cloud-sync/internal/config"
 	"cloud-sync/internal/media"
+	"cloud-sync/internal/pipeline"
 	"cloud-sync/internal/state"
 )
+
+// inflightOf returns the current in-progress uploads, or nil when no pipeline
+// is active.
+func inflightOf(pl *pipeline.Pipeline) map[string]float64 {
+	if pl == nil {
+		return nil
+	}
+	return pl.Inflight()
+}
+
+// applyInflight marks items whose key is currently uploading as "syncing" and
+// attaches their percent complete.
+func applyInflight(items []fileItem, inflight map[string]float64) {
+	if len(inflight) == 0 {
+		return
+	}
+	for i := range items {
+		if pct, ok := inflight[items[i].Key]; ok {
+			items[i].State = "syncing"
+			items[i].Progress = pct
+		}
+	}
+}
 
 func buildFileItems(cfg *config.Config, st *state.StateManager, records []*state.StatusRecord) ([]fileItem, error) {
 	items := make([]fileItem, 0, len(records))
