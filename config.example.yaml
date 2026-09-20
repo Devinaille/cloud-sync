@@ -66,9 +66,9 @@ upload_concurrency:        2
 stabilize_wait_seconds:    30
 # OpenList task poll interval (seconds).
 poll_interval_seconds:     3
-# Per-task timeout (seconds). After this the task is marked failed; the
-# server-side copy may still be running, so the pipeline does NOT re-issue Copy
-# on timeout. Poll transport errors keep polling the same task instead.
+# Per-request timeout (seconds) for OpenList calls: the initial copy and each
+# task poll. It does NOT bound the whole upload - polling continues the same
+# task until it finishes, reporting progress while it runs.
 task_timeout_seconds:      1800
 
 # Logging.

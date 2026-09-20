@@ -284,7 +284,7 @@ YAML 与 env 同名（小写 ↔ 大写）。下表是底层 env 名：
 | `UPLOAD_CONCURRENCY` | 上传并发上限 |
 | `STABILIZE_WAIT_SECONDS` | 等文件 size+mtime 稳定多久才上传 |
 | `POLL_INTERVAL_SECONDS` | OpenList 任务状态轮询间隔 |
-| `TASK_TIMEOUT_SECONDS` | 单次任务超时 |
+| `TASK_TIMEOUT_SECONDS` | 单次请求超时（Copy 与每次任务查询；不限制单任务总时长） |
 | `LOG_LEVEL` (debug/info/warn/error) | 日志等级 |
 | `LOG_FILE` (空=stdout) | 日志文件路径；空表示 stdout（由 docker compose 收集） |
 
