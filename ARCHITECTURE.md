@@ -339,6 +339,8 @@ POST /api/admin/task/copy/info?tid=<task_id>
 
 cloud-sync 间隔 `POLL_INTERVAL_SECONDS`（默认 3s）轮询，单任务超时 `TASK_TIMEOUT_SECONDS`（默认 1800s）。
 
+轮询请求本身超时/网络错误时，异步任务在 OpenList 端仍在继续，cloud-sync 会**继续轮询同一 taskID**（不会重新发起 Copy，避免重复传输）；只有任务进入终态、超过单任务总预算或父 context 取消才结束。`Copy` 请求失败时会先查目标是否已存在，存在则视为成功，否则才重试。
+
 > 同存储复制可能**同步完成**（响应 `tasks` 为空），此时直接视为成功。
 
 ### 7.3 上传成功判定（OpenList API 为唯一标准）
@@ -435,7 +437,7 @@ inotify 监听:
 | OpenList 连接失败 | 指数退避 1s, 2s, 4s, 8s, ... 最大 60s |
 | OpenList 返回 5xx | 同上 |
 | 移动云盘限流 (139yun 内部) | OpenList 自动重试（驱动层），cloud-sync 等待 |
-| 任务超时 (>30 min) | 标记为失败，进重试队列 |
+| 任务超时 (>30 min) | 标记为失败；**不重新发起 Copy**（服务端任务可能仍在进行） |
 | 累计失败 3 次 | 写 `.sync_status/FAILED/` + 告警 |
 
 ### 8.5 同步状态记录
