@@ -20,7 +20,7 @@ import (
 
 type Uploader interface {
 	Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string, overwrite bool) (string, error)
-	TaskDone(ctx context.Context, taskID string) (openlist.TaskStatus, error)
+	TaskPoll(ctx context.Context, taskID string) (openlist.TaskProgress, error)
 	Exists(ctx context.Context, path string) (bool, error)
 }
 
@@ -33,6 +33,9 @@ type Pipeline struct {
 
 	inflightMu sync.Mutex
 	inflight   map[string]struct{}
+
+	progressMu sync.Mutex
+	progress   map[string]float64
 }
 
 func NewPipeline(cfg *config.Config, log *slog.Logger, up Uploader, st *state.StateManager) *Pipeline {
@@ -43,7 +46,32 @@ func NewPipeline(cfg *config.Config, log *slog.Logger, up Uploader, st *state.St
 		st:       st,
 		sem:      make(chan struct{}, cfg.UploadConcurrency),
 		inflight: make(map[string]struct{}),
+		progress: make(map[string]float64),
 	}
+}
+
+func (p *Pipeline) setProgress(key string, pct float64) {
+	p.progressMu.Lock()
+	p.progress[key] = pct
+	p.progressMu.Unlock()
+}
+
+func (p *Pipeline) clearProgress(key string) {
+	p.progressMu.Lock()
+	delete(p.progress, key)
+	p.progressMu.Unlock()
+}
+
+// Inflight returns a snapshot of in-progress uploads mapped to their percent
+// complete (0-100). Keys are present only while an upload is running.
+func (p *Pipeline) Inflight() map[string]float64 {
+	p.progressMu.Lock()
+	defer p.progressMu.Unlock()
+	out := make(map[string]float64, len(p.progress))
+	for k, v := range p.progress {
+		out[k] = v
+	}
+	return out
 }
 
 // Run consumes events until ctx is cancelled or the channel is closed. Each
@@ -203,11 +231,6 @@ func (p *Pipeline) computeKey(absPath string) (key, srcDir, srcName, dstDir, dst
 	return
 }
 
-// errTaskTimeout marks a copy task that exceeded the configured per-task
-// budget. The server-side task may still be running, so a timeout must NOT
-// trigger another Copy (that would start a duplicate transfer).
-var errTaskTimeout = errors.New("openlist task timed out")
-
 // writeSynced persists a successful upload record.
 func (p *Pipeline) writeSynced(key, absPath, cloudPath, taskID string, info os.FileInfo) error {
 	now := time.Now().UTC()
@@ -232,6 +255,7 @@ func (p *Pipeline) writeSynced(key, absPath, cloudPath, taskID string, info os.F
 func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcDir, srcName, dstDir, dstName string, info os.FileInfo) error {
 	const maxAttempts = 3
 	cloudPath := dstDir + "/" + dstName
+	defer p.clearProgress(key)
 	var lastErr error
 	backoff := time.Second
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -259,27 +283,39 @@ func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcDir, sr
 			backoff = nextBackoff(backoff)
 			continue
 		}
-		// Poll the async task until it reaches a terminal state. A poll
-		// transport error does NOT mean the task failed: OpenList keeps copying
-		// server-side, so keep polling the same task instead of re-issuing Copy.
-		start := time.Now()
+		// Poll the async task until it reaches a terminal state. Poll errors do
+		// NOT mean the task failed: OpenList keeps copying server-side, so keep
+		// polling the same task instead of re-issuing Copy. There is no total
+		// time budget; a poll that exceeds TaskTimeout just starts a new one.
 		for {
 			if cerr := ctx.Err(); cerr != nil {
 				return cerr
 			}
-			if time.Since(start) > p.cfg.TaskTimeout {
-				return fmt.Errorf("%w after %s", errTaskTimeout, time.Since(start).Round(time.Second))
-			}
-			st, perr := p.up.TaskDone(ctx, taskID)
+			pollCtx, pcancel := context.WithTimeout(ctx, p.cfg.TaskTimeout)
+			tp, perr := p.up.TaskPoll(pollCtx, taskID)
+			pcancel()
 			if perr != nil {
+				if errors.Is(perr, openlist.ErrTaskNotFound) {
+					// The server-side task is gone (OpenList restart/clear). If
+					// the file landed on the cloud, accept it; otherwise re-issue
+					// Copy.
+					if exists, xerr := p.up.Exists(ctx, cloudPath); xerr == nil && exists {
+						p.log.Info("pipeline: task gone but destination exists; treating as synced", "key", key)
+						return p.writeSynced(key, absPath, cloudPath, "", info)
+					}
+					lastErr = perr
+					p.log.Warn("pipeline: task not found; re-copying", "key", key, "task_id", taskID)
+					goto RETRY
+				}
 				p.log.Warn("pipeline: task poll error, continuing", "task_id", taskID, "err", perr)
 				if !sleepCtx(ctx, p.cfg.PollInterval) {
 					return ctx.Err()
 				}
 				continue
 			}
-			switch st {
+			switch tp.Status {
 			case openlist.TaskPending:
+				p.setProgress(key, tp.Progress)
 				if !sleepCtx(ctx, p.cfg.PollInterval) {
 					return ctx.Err()
 				}

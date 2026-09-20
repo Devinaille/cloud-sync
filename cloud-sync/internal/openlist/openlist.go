@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -122,59 +123,80 @@ func (c *Client) Copy(ctx context.Context, srcDir, srcName, dstDir, dstName stri
 	return parsed.Data.Tasks[0].ID, nil
 }
 
-// TaskDone checks the status of an async copy task. When taskID is empty
-// (synchronous completion path), returns TaskSucceeded immediately.
-// Otherwise queries POST /api/admin/task/copy/info?tid=<taskID> and maps
-// the numeric `state` field:
+// ErrTaskNotFound means OpenList no longer knows the task (restarted without
+// persistence, the task was cleared, or the id is stale). Callers can treat it
+// as "the server-side task is gone" and fall back to a fresh Copy.
+var ErrTaskNotFound = errors.New("openlist task not found")
+
+// TaskProgress is the subset of POST /api/admin/task/copy/info we consume.
+type TaskProgress struct {
+	Status     TaskStatus
+	Progress   float64 // 0-100
+	TotalBytes int64
+}
+
+// TaskPoll checks the status and progress of an async copy task. When taskID is
+// empty (synchronous completion path), returns succeeded/100 immediately.
+// Otherwise queries POST /api/admin/task/copy/info?tid=<taskID>.
+//
+// An HTTP 404 yields ErrTaskNotFound so callers can tell "task gone" apart from
+// a transient transport error. State mapping:
 //
 //	state==2 (succeeded) → TaskSucceeded
 //	state==4 (canceled)  → TaskFailed
 //	state==7 (failed)    → TaskFailed
 //	otherwise            → TaskPending
-func (c *Client) TaskDone(ctx context.Context, taskID string) (TaskStatus, error) {
+func (c *Client) TaskPoll(ctx context.Context, taskID string) (TaskProgress, error) {
 	if taskID == "" {
-		return TaskSucceeded, nil
+		return TaskProgress{Status: TaskSucceeded, Progress: 100}, nil
 	}
 	url := fmt.Sprintf("%s/api/admin/task/copy/info?tid=%s", c.baseURL, taskID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
 	if err != nil {
-		return "", err
+		return TaskProgress{}, err
 	}
 	req.Header.Set("Authorization", c.token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return "", err
+		return TaskProgress{}, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return TaskProgress{}, ErrTaskNotFound
+	}
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode/100 != 2 {
-		return "", fmt.Errorf("openlist task: HTTP %d: %s", resp.StatusCode, string(respBody))
+		return TaskProgress{}, fmt.Errorf("openlist task: HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 	var parsed struct {
 		Code    int    `json:"code"`
 		Message string `json:"message"`
 		Data    struct {
-			ID     string `json:"id"`
-			State  int    `json:"state"`
-			Status string `json:"status"`
-			Error  string `json:"error"`
+			ID         string  `json:"id"`
+			State      int     `json:"state"`
+			Status     string  `json:"status"`
+			Progress   float64 `json:"progress"`
+			TotalBytes int64   `json:"total_bytes"`
+			Error      string  `json:"error"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return "", fmt.Errorf("openlist task: parse: %w", err)
+		return TaskProgress{}, fmt.Errorf("openlist task: parse: %w", err)
 	}
 	if parsed.Code != 200 {
-		return "", fmt.Errorf("openlist task: code=%d msg=%s", parsed.Code, parsed.Message)
+		return TaskProgress{}, fmt.Errorf("openlist task: code=%d msg=%s", parsed.Code, parsed.Message)
 	}
+	tp := TaskProgress{Progress: parsed.Data.Progress, TotalBytes: parsed.Data.TotalBytes}
 	switch parsed.Data.State {
 	case 2:
-		return TaskSucceeded, nil
+		tp.Status = TaskSucceeded
 	case 4, 7:
-		return TaskFailed, nil
+		tp.Status = TaskFailed
 	default:
-		return TaskPending, nil
+		tp.Status = TaskPending
 	}
+	return tp, nil
 }
 
 // Exists reports whether path exists on OpenList (POST /api/fs/get).

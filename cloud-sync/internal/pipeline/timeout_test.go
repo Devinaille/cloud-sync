@@ -66,31 +66,79 @@ func TestPipeline_PollErrorKeepsPollingSameTask(t *testing.T) {
 	}
 }
 
-// Once the per-task budget elapses, the pipeline must give up without issuing
-// another Copy (the server task may still be transferring), and persist a
-// failed record per the documented timeout semantics.
-func TestPipeline_TaskTimeoutDoesNotReCopy(t *testing.T) {
+// Polling must continue past the per-request timeout (which only bounds a
+// single /copy/info call) until the task reaches a terminal state; there is no
+// total-time budget that aborts the upload.
+func TestPipeline_PollingContinuesPastRequestTimeout(t *testing.T) {
 	p, up, st, mediaDir := newTestPipeline(t)
-	p.cfg.TaskTimeout = 100 * time.Millisecond
+	p.cfg.TaskTimeout = 30 * time.Millisecond
 	p.cfg.PollInterval = 10 * time.Millisecond
 	up.Mu.Lock()
-	up.TaskStatusOverride = openlist.TaskPending
+	up.TaskProgress = 42
+	up.TaskPendingCount = 5 // ~50ms of pending, longer than TaskTimeout
 	up.Mu.Unlock()
 
 	writeVideo(t, mediaDir, "Movies/Slow.mkv")
 	start := time.Now()
 	processFile(t, p, filepath.Join(mediaDir, "Movies/Slow.mkv"))
-	if d := time.Since(start); d > time.Second {
-		t.Errorf("Process took %v; timeout must return without multi-attempt backoff", d)
+	elapsed := time.Since(start)
+	if elapsed <= p.cfg.TaskTimeout {
+		t.Fatalf("Process returned after %v (<= per-request timeout); polling should continue past it", elapsed)
 	}
-
 	if n := copyCalls(up); n != 1 {
-		t.Errorf("Copy calls = %d, want 1 (timeout must not re-copy)", n)
+		t.Errorf("Copy calls = %d, want 1 (no re-copy while polling)", n)
 	}
 	if ok, _ := st.AlreadySynced("Movies/Slow.mkv"); !ok {
-		t.Fatal("expected a failed record after task timeout")
+		t.Fatal("expected a synced record")
 	}
-	if rec := readRecordStatus(t, st, "Movies/Slow.mkv", "failed"); rec.Status != "failed" {
+	if rec := readRecord(t, st, "Movies/Slow.mkv"); rec.Status != "synced" {
+		t.Errorf("status = %q, want synced", rec.Status)
+	}
+	if got := p.Inflight(); len(got) != 0 {
+		t.Errorf("Inflight() = %v, want empty after completion", got)
+	}
+}
+
+// A 404 (task gone) with the destination already on the cloud is treated as
+// synced.
+func TestPipeline_TaskNotFoundExistingDestIsSynced(t *testing.T) {
+	p, up, st, mediaDir := newTestPipeline(t)
+	up.Mu.Lock()
+	up.TaskNotFound = true
+	up.CloudExists = map[string]bool{"/139yun_media/media/Movies/Gone.mkv": true}
+	up.Mu.Unlock()
+
+	writeVideo(t, mediaDir, "Movies/Gone.mkv")
+	processFile(t, p, filepath.Join(mediaDir, "Movies/Gone.mkv"))
+
+	if n := copyCalls(up); n != 1 {
+		t.Errorf("Copy calls = %d, want 1 (no retry when dest exists)", n)
+	}
+	if ok, _ := st.AlreadySynced("Movies/Gone.mkv"); !ok {
+		t.Fatal("expected synced when task is gone but dest exists")
+	}
+	if rec := readRecord(t, st, "Movies/Gone.mkv"); rec.Status != "synced" {
+		t.Errorf("status = %q, want synced", rec.Status)
+	}
+}
+
+// A 404 with no destination re-issues Copy (up to maxAttempts), then fails.
+func TestPipeline_TaskNotFoundReCopies(t *testing.T) {
+	p, up, st, mediaDir := newTestPipeline(t)
+	up.Mu.Lock()
+	up.TaskNotFound = true
+	up.Mu.Unlock()
+
+	writeVideo(t, mediaDir, "Movies/Vanish.mkv")
+	processFile(t, p, filepath.Join(mediaDir, "Movies/Vanish.mkv"))
+
+	if n := copyCalls(up); n != 3 {
+		t.Errorf("Copy calls = %d, want 3 (task gone re-issues Copy)", n)
+	}
+	if ok, _ := st.AlreadySynced("Movies/Vanish.mkv"); !ok {
+		t.Fatal("expected a failed record")
+	}
+	if rec := readRecordStatus(t, st, "Movies/Vanish.mkv", "failed"); rec.Status != "failed" {
 		t.Errorf("status = %q, want failed", rec.Status)
 	}
 }

@@ -3,6 +3,7 @@ package openlist
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -276,29 +277,29 @@ func TestClient_Copy_NonZeroCode(t *testing.T) {
 	}
 }
 
-// ---- TaskDone tests ------------------------------------------------------
+// ---- TaskPoll tests ------------------------------------------------------
 
-// TestClient_TaskDone_EmptyTaskID verifies the synchronous completion shortcut:
-// when Copy returned ("", nil) the caller passes "" to TaskDone and the
+// TestClient_TaskPoll_EmptyTaskID verifies the synchronous completion shortcut:
+// when Copy returned ("", nil) the caller passes "" to TaskPoll and the
 // client must short-circuit to TaskSucceeded without making any HTTP request.
-func TestClient_TaskDone_EmptyTaskID(t *testing.T) {
+func TestClient_TaskPoll_EmptyTaskID(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Errorf("TaskDone must not make an HTTP request for empty taskID; got %s", r.URL.Path)
+		t.Errorf("TaskPoll must not make an HTTP request for empty taskID; got %s", r.URL.Path)
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
 	c := newTestClient(t, srv)
-	st, err := c.TaskDone(context.Background(), "")
+	tp, err := c.TaskPoll(context.Background(), "")
 	if err != nil {
-		t.Fatalf("TaskDone: %v", err)
+		t.Fatalf("TaskPoll: %v", err)
 	}
-	if st != TaskSucceeded {
-		t.Errorf("status = %q, want succeeded", st)
+	if tp.Status != TaskSucceeded {
+		t.Errorf("status = %q, want succeeded", tp.Status)
 	}
 }
 
-// TestClient_TaskDone_Succeeded verifies state==2 maps to TaskSucceeded.
-func TestClient_TaskDone_Succeeded(t *testing.T) {
+// TestClient_TaskPoll_Succeeded verifies state==2 maps to TaskSucceeded.
+func TestClient_TaskPoll_Succeeded(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/admin/task/copy/info" {
 			t.Errorf("unexpected path %s", r.URL.Path)
@@ -324,17 +325,17 @@ func TestClient_TaskDone_Succeeded(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := newTestClient(t, srv)
-	st, err := c.TaskDone(context.Background(), "abc-123")
+	tp, err := c.TaskPoll(context.Background(), "abc-123")
 	if err != nil {
-		t.Fatalf("TaskDone: %v", err)
+		t.Fatalf("TaskPoll: %v", err)
 	}
-	if st != TaskSucceeded {
-		t.Errorf("status = %q, want succeeded", st)
+	if tp.Status != TaskSucceeded {
+		t.Errorf("status = %q, want succeeded", tp.Status)
 	}
 }
 
-// TestClient_TaskDone_Pending verifies state==1 maps to TaskPending.
-func TestClient_TaskDone_Pending(t *testing.T) {
+// TestClient_TaskPoll_Pending verifies state==1 maps to TaskPending.
+func TestClient_TaskPoll_Pending(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("tid") != "task-1" {
 			t.Errorf("unexpected tid = %q", r.URL.Query().Get("tid"))
@@ -346,17 +347,17 @@ func TestClient_TaskDone_Pending(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := newTestClient(t, srv)
-	st, err := c.TaskDone(context.Background(), "task-1")
+	tp, err := c.TaskPoll(context.Background(), "task-1")
 	if err != nil {
-		t.Fatalf("TaskDone: %v", err)
+		t.Fatalf("TaskPoll: %v", err)
 	}
-	if st != TaskPending {
-		t.Errorf("status = %q, want pending", st)
+	if tp.Status != TaskPending {
+		t.Errorf("status = %q, want pending", tp.Status)
 	}
 }
 
-// TestClient_TaskDone_Failed verifies state==7 maps to TaskFailed.
-func TestClient_TaskDone_Failed(t *testing.T) {
+// TestClient_TaskPoll_Failed verifies state==7 maps to TaskFailed.
+func TestClient_TaskPoll_Failed(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"code": 200,
@@ -370,18 +371,18 @@ func TestClient_TaskDone_Failed(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := newTestClient(t, srv)
-	st, err := c.TaskDone(context.Background(), "task-7")
+	tp, err := c.TaskPoll(context.Background(), "task-7")
 	if err != nil {
-		t.Fatalf("TaskDone: %v", err)
+		t.Fatalf("TaskPoll: %v", err)
 	}
-	if st != TaskFailed {
-		t.Errorf("status = %q, want failed", st)
+	if tp.Status != TaskFailed {
+		t.Errorf("status = %q, want failed", tp.Status)
 	}
 }
 
-// TestClient_TaskDone_Canceled verifies state==4 (canceled) maps to TaskFailed
+// TestClient_TaskPoll_Canceled verifies state==4 (canceled) maps to TaskFailed
 // since cancellation is a terminal failure for our purposes.
-func TestClient_TaskDone_Canceled(t *testing.T) {
+func TestClient_TaskPoll_Canceled(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"code": 200,
@@ -394,32 +395,32 @@ func TestClient_TaskDone_Canceled(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := newTestClient(t, srv)
-	st, err := c.TaskDone(context.Background(), "task-4")
+	tp, err := c.TaskPoll(context.Background(), "task-4")
 	if err != nil {
-		t.Fatalf("TaskDone: %v", err)
+		t.Fatalf("TaskPoll: %v", err)
 	}
-	if st != TaskFailed {
-		t.Errorf("status = %q, want failed", st)
+	if tp.Status != TaskFailed {
+		t.Errorf("status = %q, want failed", tp.Status)
 	}
 }
 
-// TestClient_TaskDone_HTTPError verifies HTTP 500 becomes a client error.
-func TestClient_TaskDone_HTTPError(t *testing.T) {
+// TestClient_TaskPoll_HTTPError verifies HTTP 500 becomes a client error.
+func TestClient_TaskPoll_HTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("oops"))
 	}))
 	defer srv.Close()
 	c := newTestClient(t, srv)
-	_, err := c.TaskDone(context.Background(), "task-err")
+	_, err := c.TaskPoll(context.Background(), "task-err")
 	if err == nil {
-		t.Fatal("TaskDone: expected error, got nil")
+		t.Fatal("TaskPoll: expected error, got nil")
 	}
 }
 
-// TestClient_TaskDone_NonZeroCode verifies HTTP 200 with code=500 yields an
+// TestClient_TaskPoll_NonZeroCode verifies HTTP 200 with code=500 yields an
 // error.
-func TestClient_TaskDone_NonZeroCode(t *testing.T) {
+func TestClient_TaskPoll_NonZeroCode(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"code":    500,
@@ -429,9 +430,52 @@ func TestClient_TaskDone_NonZeroCode(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := newTestClient(t, srv)
-	_, err := c.TaskDone(context.Background(), "task-x")
+	_, err := c.TaskPoll(context.Background(), "task-x")
 	if err == nil || !strings.Contains(err.Error(), "code=500") {
 		t.Errorf("err = %v, want code=500", err)
+	}
+}
+
+// TestClient_TaskPoll_Progress verifies progress and total_bytes are parsed for
+// an in-flight task.
+func TestClient_TaskPoll_Progress(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 200,
+			"data": map[string]any{
+				"id": "task-p", "state": 1, "status": "uploading",
+				"progress": 42.5, "total_bytes": int64(35316000000),
+			},
+		})
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv)
+	tp, err := c.TaskPoll(context.Background(), "task-p")
+	if err != nil {
+		t.Fatalf("TaskPoll: %v", err)
+	}
+	if tp.Status != TaskPending {
+		t.Errorf("status = %q, want pending", tp.Status)
+	}
+	if tp.Progress != 42.5 {
+		t.Errorf("progress = %v, want 42.5", tp.Progress)
+	}
+	if tp.TotalBytes != 35316000000 {
+		t.Errorf("total_bytes = %d, want 35316000000", tp.TotalBytes)
+	}
+}
+
+// TestClient_TaskPoll_NotFound verifies HTTP 404 maps to ErrTaskNotFound so the
+// caller can fall back to a fresh Copy.
+func TestClient_TaskPoll_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"code":404,"message":"task not found"}`))
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv)
+	if _, err := c.TaskPoll(context.Background(), "gone"); !errors.Is(err, ErrTaskNotFound) {
+		t.Fatalf("err = %v, want ErrTaskNotFound", err)
 	}
 }
 
