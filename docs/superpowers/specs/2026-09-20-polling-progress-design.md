@@ -29,7 +29,7 @@
 - `state==4/7`（canceled/failed）→ 失败，可重试 `Copy`（`maxAttempts=3`）；
 - 其他状态（pending/running/canceling/errored/failing/waiting_retry/before_retry）→ 继续轮询；
 - 轮询请求错误（网络/超时）→ log + 按 `PollInterval` 继续（**不重新 Copy**，服务端任务仍在跑）；
-- **404 任务不存在** → 先 `Exists(dst)`：存在→ `synced`；不存在→重新 `Copy`（同样受 `maxAttempts` 限制）；仍失败→ `failed`；
+- **404 任务不存在** → 先 `Exists(dst)`：存在→ `synced`；不存在→写 `failed`，**不重新 `Copy`**（任务被取消/清理后不应被自动加回）；
 - 父 ctx 取消 → 返回 `ctx.Err()`，不写 `failed`。
 
 ### 3.2 超时语义

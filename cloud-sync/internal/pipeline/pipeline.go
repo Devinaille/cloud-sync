@@ -171,19 +171,10 @@ func (p *Pipeline) process(ctx context.Context, ev watcher.FileEvent) {
 	if key == "" {
 		return
 	}
-	// Cross-pipeline in-flight guard: the shared tracker claims the key so a
-	// resumed generation's StartupScan cannot start a second copy of a file a
-	// paused one-off is still uploading (and vice versa). It is also the
-	// race-free dedup primitive when concurrency > 1.
-	if !p.progress.TryClaim(key) {
-		p.log.Debug("pipeline: key already in flight, skipping duplicate", "key", key)
-		return
-	}
-	defer p.progress.Release(key)
-
-	// Skip already-synced files BEFORE stabilizing. On restart the startup scan
-	// re-walks every file; a file with a record must not wait the full
-	// stabilize window again (that made restarts look like a full re-scan).
+	// Skip already-synced files BEFORE claiming or stabilizing. On restart the
+	// startup scan re-walks every file; a file with a record must not wait the
+	// full stabilize window again (that made restarts look like a full re-scan),
+	// and must not briefly show up as "syncing".
 	synced, err := p.st.AlreadySynced(key)
 	if err != nil {
 		p.log.Warn("pipeline: AlreadySynced check failed", "key", key, "err", err)
@@ -192,6 +183,16 @@ func (p *Pipeline) process(ctx context.Context, ev watcher.FileEvent) {
 		p.log.Debug("pipeline: already synced, skipping", "key", key)
 		return
 	}
+
+	// Cross-pipeline in-flight guard: the shared tracker claims the key so a
+	// resumed generation's StartupScan cannot start a second copy of a file a
+	// paused one-off is still uploading (and vice versa). TryClaim is atomic, so
+	// this is also the race-free dedup primitive when concurrency > 1.
+	if !p.progress.TryClaim(key) {
+		p.log.Debug("pipeline: key already in flight, skipping duplicate", "key", key)
+		return
+	}
+	defer p.progress.Release(key)
 
 	// stabilize: wait until the file stops changing (only for files we upload).
 	if err := stabilize(ctx, ev.Path, p.cfg.StabilizeWait); err != nil {
@@ -336,16 +337,15 @@ func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcDir, sr
 			pcancel()
 			if perr != nil {
 				if errors.Is(perr, openlist.ErrTaskNotFound) {
-					// The server-side task is gone (OpenList restart/clear). If
-					// the file landed on the cloud, accept it; otherwise re-issue
-					// Copy.
+					// The server-side task is gone. If the file landed on the
+					// cloud, accept it; otherwise stop: a task canceled and
+					// cleared in OpenList would otherwise be resurrected by a
+					// fresh Copy. Mark failed; the user can retry manually.
 					if exists, xerr := p.up.Exists(ctx, cloudPath); xerr == nil && exists {
 						p.log.Info("pipeline: task gone but destination exists; treating as synced", "key", key)
 						return p.writeSynced(key, absPath, cloudPath, "", info)
 					}
-					lastErr = perr
-					p.log.Warn("pipeline: task not found; re-copying", "key", key, "task_id", taskID)
-					goto RETRY
+					return fmt.Errorf("openlist task %s no longer exists", taskID)
 				}
 				p.log.Warn("pipeline: task poll error, continuing", "task_id", taskID, "err", perr)
 				if !sleepCtx(ctx, p.cfg.PollInterval) {

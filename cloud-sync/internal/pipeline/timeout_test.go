@@ -122,8 +122,9 @@ func TestPipeline_TaskNotFoundExistingDestIsSynced(t *testing.T) {
 	}
 }
 
-// A 404 with no destination re-issues Copy (up to maxAttempts), then fails.
-func TestPipeline_TaskNotFoundReCopies(t *testing.T) {
+// A 404 with no destination is terminal: the task was removed (e.g. canceled
+// and cleared in OpenList), so re-issuing Copy would resurrect stopped work.
+func TestPipeline_TaskNotFoundMarksFailed(t *testing.T) {
 	p, up, st, mediaDir := newTestPipeline(t)
 	up.Mu.Lock()
 	up.TaskNotFound = true
@@ -132,8 +133,8 @@ func TestPipeline_TaskNotFoundReCopies(t *testing.T) {
 	writeVideo(t, mediaDir, "Movies/Vanish.mkv")
 	processFile(t, p, filepath.Join(mediaDir, "Movies/Vanish.mkv"))
 
-	if n := copyCalls(up); n != 3 {
-		t.Errorf("Copy calls = %d, want 3 (task gone re-issues Copy)", n)
+	if n := copyCalls(up); n != 1 {
+		t.Errorf("Copy calls = %d, want 1 (task gone must not re-copy)", n)
 	}
 	if ok, _ := st.AlreadySynced("Movies/Vanish.mkv"); !ok {
 		t.Fatal("expected a failed record")

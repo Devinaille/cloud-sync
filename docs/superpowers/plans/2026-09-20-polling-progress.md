@@ -36,7 +36,7 @@
 - [ ] 先写失败测试：
   - `TestPipeline_PollingContinuesPastRequestTimeout`：短 `TaskTimeout`，mock 返回 pending+progress N 次后 succeeded → Copy 仅 1 次、synced、期间 progress>0。
   - `TestPipeline_TaskNotFoundExistingDestIsSynced`：`TaskNotFound=true` + `Exists` true → synced、Copy 1 次。
-  - `TestPipeline_TaskNotFoundReCopies`：`TaskNotFound=true` + `Exists` false → 重 Copy（最多 3 次）→ failed。
+  - `TestPipeline_TaskNotFoundMarksFailed`：`TaskNotFound=true` + `Exists` false → 写 failed、Copy 1 次（不重新 Copy）。
 - [ ] 实现：去总预算硬闸；`TaskPoll` 每轮读进度；404→`Exists` 回退；`defer clearProgress(key)`；新增 `progress` map + `Inflight()`。
 - [ ] `go test -race ./internal/pipeline`，提交 `fix(pipeline): poll task until terminal; expose progress`。
 
