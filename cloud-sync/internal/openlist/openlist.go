@@ -18,6 +18,10 @@ const (
 	TaskPending   TaskStatus = "pending"
 	TaskSucceeded TaskStatus = "succeeded"
 	TaskFailed    TaskStatus = "failed"
+	// TaskCanceled is a terminal state distinct from TaskFailed: a canceled
+	// task was stopped deliberately (e.g. via the OpenList UI) and must NOT be
+	// re-issued automatically.
+	TaskCanceled TaskStatus = "canceled"
 )
 
 type Client struct {
@@ -143,7 +147,7 @@ type TaskProgress struct {
 // a transient transport error. State mapping:
 //
 //	state==2 (succeeded) → TaskSucceeded
-//	state==4 (canceled)  → TaskFailed
+//	state==4 (canceled)  → TaskCanceled
 //	state==7 (failed)    → TaskFailed
 //	otherwise            → TaskPending
 func (c *Client) TaskPoll(ctx context.Context, taskID string) (TaskProgress, error) {
@@ -191,7 +195,9 @@ func (c *Client) TaskPoll(ctx context.Context, taskID string) (TaskProgress, err
 	switch parsed.Data.State {
 	case 2:
 		tp.Status = TaskSucceeded
-	case 4, 7:
+	case 4:
+		tp.Status = TaskCanceled
+	case 7:
 		tp.Status = TaskFailed
 	default:
 		tp.Status = TaskPending

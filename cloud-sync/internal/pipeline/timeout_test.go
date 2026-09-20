@@ -185,3 +185,25 @@ func TestPipeline_TaskFailedReCopies(t *testing.T) {
 		t.Fatal("expected a failed record after retry exhaustion")
 	}
 }
+
+// A deliberately canceled task (OpenList state 4) must not be re-issued: the
+// upload is marked failed and no further Copy is attempted.
+func TestPipeline_TaskCanceledDoesNotReCopy(t *testing.T) {
+	p, up, st, mediaDir := newTestPipeline(t)
+	up.Mu.Lock()
+	up.TaskStatusOverride = openlist.TaskCanceled
+	up.Mu.Unlock()
+
+	writeVideo(t, mediaDir, "Movies/Cancelled.mkv")
+	processFile(t, p, filepath.Join(mediaDir, "Movies/Cancelled.mkv"))
+
+	if n := copyCalls(up); n != 1 {
+		t.Errorf("Copy calls = %d, want 1 (canceled must not re-copy)", n)
+	}
+	if ok, _ := st.AlreadySynced("Movies/Cancelled.mkv"); !ok {
+		t.Fatal("expected a failed record after cancel")
+	}
+	if rec := readRecordStatus(t, st, "Movies/Cancelled.mkv", "failed"); rec.Status != "failed" {
+		t.Errorf("status = %q, want failed", rec.Status)
+	}
+}

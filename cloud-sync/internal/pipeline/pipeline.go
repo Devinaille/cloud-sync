@@ -24,38 +24,65 @@ type Uploader interface {
 	Exists(ctx context.Context, path string) (bool, error)
 }
 
-// ProgressTracker is a concurrency-safe map of in-flight upload percents. It is
-// shared between the supervisor's generation pipeline and any one-off pipelines
-// (e.g. a single retry while tasks are paused) so the Web UI can see progress
-// for both.
+// ProgressTracker is a concurrency-safe set of in-flight uploads shared between
+// the supervisor's generation pipeline and any one-off pipelines (e.g. a single
+// retry while tasks are paused). It doubles as the cross-pipeline dedup claim:
+// a key is claimed when an upload starts and released when it ends, so a
+// StartupScan triggered by Resume cannot start a second copy of a file a paused
+// one-off is still uploading.
 type ProgressTracker struct {
-	mu sync.Mutex
-	m  map[string]float64
+	mu       sync.Mutex
+	claimed  map[string]struct{}
+	progress map[string]float64
 }
 
 func NewProgressTracker() *ProgressTracker {
-	return &ProgressTracker{m: make(map[string]float64)}
+	return &ProgressTracker{
+		claimed:  make(map[string]struct{}),
+		progress: make(map[string]float64),
+	}
+}
+
+// TryClaim marks key in-flight, returning false if it already is.
+func (t *ProgressTracker) TryClaim(key string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if _, ok := t.claimed[key]; ok {
+		return false
+	}
+	t.claimed[key] = struct{}{}
+	return true
+}
+
+// Release clears a key's claim and progress.
+func (t *ProgressTracker) Release(key string) {
+	t.mu.Lock()
+	delete(t.claimed, key)
+	delete(t.progress, key)
+	t.mu.Unlock()
+}
+
+// Has reports whether key is currently claimed.
+func (t *ProgressTracker) Has(key string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	_, ok := t.claimed[key]
+	return ok
 }
 
 func (t *ProgressTracker) set(key string, pct float64) {
 	t.mu.Lock()
-	t.m[key] = pct
+	t.progress[key] = pct
 	t.mu.Unlock()
 }
 
-func (t *ProgressTracker) clear(key string) {
-	t.mu.Lock()
-	delete(t.m, key)
-	t.mu.Unlock()
-}
-
-// Snapshot returns a copy of the current key→percent map.
+// Snapshot returns claimed keys mapped to their percent (0 when not yet known).
 func (t *ProgressTracker) Snapshot() map[string]float64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	out := make(map[string]float64, len(t.m))
-	for k, v := range t.m {
-		out[k] = v
+	out := make(map[string]float64, len(t.claimed))
+	for k := range t.claimed {
+		out[k] = t.progress[k]
 	}
 	return out
 }
@@ -67,9 +94,6 @@ type Pipeline struct {
 	st  *state.StateManager
 	sem chan struct{}
 
-	inflightMu sync.Mutex
-	inflight   map[string]struct{}
-
 	progress *ProgressTracker
 }
 
@@ -78,7 +102,7 @@ func NewPipeline(cfg *config.Config, log *slog.Logger, up Uploader, st *state.St
 }
 
 // NewPipelineWithTracker is like NewPipeline but shares the given tracker so the
-// caller (the supervisor) can observe progress across pipelines.
+// caller (the supervisor) can observe progress and dedup across pipelines.
 func NewPipelineWithTracker(cfg *config.Config, log *slog.Logger, up Uploader, st *state.StateManager, tracker *ProgressTracker) *Pipeline {
 	if tracker == nil {
 		tracker = NewProgressTracker()
@@ -89,13 +113,11 @@ func NewPipelineWithTracker(cfg *config.Config, log *slog.Logger, up Uploader, s
 		up:       up,
 		st:       st,
 		sem:      make(chan struct{}, cfg.UploadConcurrency),
-		inflight: make(map[string]struct{}),
 		progress: tracker,
 	}
 }
 
 func (p *Pipeline) setProgress(key string, pct float64) { p.progress.set(key, pct) }
-func (p *Pipeline) clearProgress(key string)            { p.progress.clear(key) }
 
 // Inflight returns a snapshot of in-progress uploads mapped to their percent
 // complete (0-100). Keys are present only while an upload is running.
@@ -149,23 +171,15 @@ func (p *Pipeline) process(ctx context.Context, ev watcher.FileEvent) {
 	if key == "" {
 		return
 	}
-	// Per-key in-flight guard: prevent duplicate concurrent uploads for the
-	// same file. The AlreadySynced check below is racy when concurrency > 1
-	// because both events can pass the check before either writes a record.
-	// The inflight set is the race-free dedup primitive.
-	p.inflightMu.Lock()
-	if _, dup := p.inflight[key]; dup {
-		p.inflightMu.Unlock()
+	// Cross-pipeline in-flight guard: the shared tracker claims the key so a
+	// resumed generation's StartupScan cannot start a second copy of a file a
+	// paused one-off is still uploading (and vice versa). It is also the
+	// race-free dedup primitive when concurrency > 1.
+	if !p.progress.TryClaim(key) {
 		p.log.Debug("pipeline: key already in flight, skipping duplicate", "key", key)
 		return
 	}
-	p.inflight[key] = struct{}{}
-	p.inflightMu.Unlock()
-	defer func() {
-		p.inflightMu.Lock()
-		delete(p.inflight, key)
-		p.inflightMu.Unlock()
-	}()
+	defer p.progress.Release(key)
 
 	// Skip already-synced files BEFORE stabilizing. On restart the startup scan
 	// re-walks every file; a file with a record must not wait the full
@@ -282,7 +296,6 @@ func (p *Pipeline) writeSynced(key, absPath, cloudPath, taskID string, info os.F
 func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcDir, srcName, dstDir, dstName string, info os.FileInfo) error {
 	const maxAttempts = 3
 	cloudPath := dstDir + "/" + dstName
-	defer p.clearProgress(key)
 	var lastErr error
 	backoff := time.Second
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -352,6 +365,17 @@ func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcDir, sr
 			case openlist.TaskFailed:
 				lastErr = fmt.Errorf("openlist task failed")
 				goto RETRY
+			case openlist.TaskCanceled:
+				// Canceled deliberately (e.g. from the OpenList UI). Do not
+				// re-issue Copy - that would re-add a task the user stopped.
+				return fmt.Errorf("openlist task canceled for %s", key)
+			default:
+				// Unknown status: avoid a busy poll loop.
+				p.log.Warn("pipeline: unknown task status, continuing", "task_id", taskID, "status", string(tp.Status))
+				if !sleepCtx(ctx, p.cfg.PollInterval) {
+					return ctx.Err()
+				}
+				continue
 			}
 		}
 	RETRY:

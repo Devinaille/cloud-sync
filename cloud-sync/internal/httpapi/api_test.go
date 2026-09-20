@@ -233,15 +233,14 @@ func TestAPI_Files_FiltersAndPaginates(t *testing.T) {
 
 func TestAPI_Files_Unsynced(t *testing.T) {
 	env := newTestSupervisor(t)
+	// Pause so the watcher/scan does not claim the file; we want to observe it
+	// as plain "unsynced".
+	env.sup.Pause()
 
-	// Write into a subdir created after Start: the fsnotify watcher only adds
-	// directories that exist when it is constructed, so the pipeline will not
-	// race the scan by processing this file.
-	sub := filepath.Join(env.watch, "Fresh")
-	if err := os.MkdirAll(sub, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(env.watch, "Fresh"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(sub, "New.mkv"), make([]byte, 4096), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(env.watch, "Fresh", "New.mkv"), make([]byte, 4096), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

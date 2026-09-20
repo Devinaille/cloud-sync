@@ -371,14 +371,11 @@ func TestSupervisor_ProcessOneProgressVisibleWhilePaused(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		infl := sup.Inflight()
-		if len(infl) > 0 {
-			if pct, ok := infl["Movies/One.mkv"]; !ok || pct != 55 {
-				t.Fatalf("Inflight() = %v, want Movies/One.mkv=55", infl)
-			}
+		if pct, ok := infl["Movies/One.mkv"]; ok && pct == 55 {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("timed out waiting for one-off upload to appear in Inflight()")
+			t.Fatalf("Inflight() = %v, want Movies/One.mkv=55", sup.Inflight())
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -394,4 +391,63 @@ func TestSupervisor_ProcessOneProgressVisibleWhilePaused(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+}
+
+// Resuming tasks must not re-upload a file a paused one-off retry is still
+// uploading. The shared tracker's claim makes StartupScan skip it.
+func TestSupervisor_ResumeDoesNotReuploadInFlightOneOff(t *testing.T) {
+	up := mockopenlist.New()
+	up.Mu.Lock()
+	up.TaskPendingCount = 100000
+	up.TaskProgress = 30
+	up.Mu.Unlock()
+
+	cfg := testutil.TestConfig(t)
+	cfg.TasksEnabled = false
+	cfg.PollInterval = 10 * time.Millisecond
+
+	sup := NewSupervisor("", cfg, testutil.TestLogger(), SupervisorDeps{
+		NewUploader: func(c *config.Config, l *slog.Logger) pipeline.Uploader { return up },
+	})
+	if err := sup.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(sup.Stop)
+
+	dir := cfg.WatchDirs[0]
+	src := filepath.Join(dir, "Movies", "Dup.mkv")
+	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, make([]byte, 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := sup.ProcessOne(context.Background(), watcher.FileEvent{Path: src, Size: 4096, Detected: time.Now()}); err != nil {
+		t.Fatalf("ProcessOne: %v", err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for !sup.progress.Has("Movies/Dup.mkv") {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for the one-off to claim the key")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	if err := sup.Resume(context.Background()); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	time.Sleep(150 * time.Millisecond) // let the watcher/startup scan run
+
+	up.Mu.Lock()
+	n := len(up.CopyCalls)
+	up.Mu.Unlock()
+	if n != 1 {
+		t.Fatalf("Copy calls = %d, want 1 (resume must not re-upload an in-flight one-off)", n)
+	}
+
+	// Let the one-off finish so t.Cleanup(Stop) is quick.
+	up.Mu.Lock()
+	up.TaskPendingCount = 0
+	up.Mu.Unlock()
 }

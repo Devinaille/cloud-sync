@@ -380,8 +380,8 @@ func TestClient_TaskPoll_Failed(t *testing.T) {
 	}
 }
 
-// TestClient_TaskPoll_Canceled verifies state==4 (canceled) maps to TaskFailed
-// since cancellation is a terminal failure for our purposes.
+// TestClient_TaskPoll_Canceled verifies state==4 (canceled) maps to
+// TaskCanceled, distinct from TaskFailed so the caller does not re-issue Copy.
 func TestClient_TaskPoll_Canceled(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -399,8 +399,28 @@ func TestClient_TaskPoll_Canceled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TaskPoll: %v", err)
 	}
-	if tp.Status != TaskFailed {
-		t.Errorf("status = %q, want failed", tp.Status)
+	if tp.Status != TaskCanceled {
+		t.Errorf("status = %q, want canceled", tp.Status)
+	}
+}
+
+// TestClient_TaskPoll_CancelingIsPending verifies state==3 (canceling) is not
+// terminal yet: the poller keeps waiting for state 4.
+func TestClient_TaskPoll_CancelingIsPending(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 200,
+			"data": map[string]any{"id": "task-3", "state": 3, "status": "canceling"},
+		})
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv)
+	tp, err := c.TaskPoll(context.Background(), "task-3")
+	if err != nil {
+		t.Fatalf("TaskPoll: %v", err)
+	}
+	if tp.Status != TaskPending {
+		t.Errorf("status = %q, want pending", tp.Status)
 	}
 }
 
