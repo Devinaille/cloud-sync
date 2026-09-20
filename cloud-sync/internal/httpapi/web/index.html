@@ -44,6 +44,10 @@
             <div class="stat-value" id="count-synced">&ndash;</div>
             <div class="stat-label" data-i18n="state.synced">Synced</div>
           </div>
+          <div class="card stat" data-state="syncing">
+            <div class="stat-value" id="count-syncing">&ndash;</div>
+            <div class="stat-label" data-i18n="state.syncing">Syncing</div>
+          </div>
           <div class="card stat" data-state="failed">
             <div class="stat-value" id="count-failed">&ndash;</div>
             <div class="stat-label" data-i18n="state.failed">Failed</div>
@@ -113,6 +117,7 @@
             <button class="chip" type="button" data-state="failed" data-i18n="state.failed">Failed</button>
             <button class="chip" type="button" data-state="cleaned" data-i18n="state.cleaned">Cleaned</button>
             <button class="chip" type="button" data-state="unsynced" data-i18n="state.unsynced">Unsynced</button>
+            <button class="chip" type="button" data-state="syncing" data-i18n="state.syncing">Syncing</button>
           </div>
           <input
             id="search"

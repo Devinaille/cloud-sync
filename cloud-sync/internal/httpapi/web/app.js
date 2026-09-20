@@ -31,6 +31,7 @@
       "state.failed": "Failed",
       "state.cleaned": "Cleaned",
       "state.unsynced": "Unsynced",
+      "state.syncing": "Syncing",
       "state.unknown": "Unknown",
       "health.title": "Health",
       "health.openlist": "OpenList",
@@ -135,6 +136,7 @@
       "state.failed": "失败",
       "state.cleaned": "已清理",
       "state.unsynced": "未同步",
+      "state.syncing": "上传中",
       "state.unknown": "未知",
       "health.title": "运行状况",
       "health.openlist": "OpenList",
@@ -473,6 +475,7 @@
     setText("count-failed", counts.failed != null ? counts.failed : 0);
     setText("count-cleaned", counts.cleaned != null ? counts.cleaned : 0);
     setText("count-unsynced", counts.unsynced != null ? counts.unsynced : 0);
+    setText("count-syncing", counts.syncing != null ? counts.syncing : 0);
 
     var banner = byId("degraded-banner");
     if (st.ok) {
@@ -743,16 +746,21 @@
 
   function stateLabel(state) {
     var key = "state." + (state || "unknown");
-    var known = ["synced", "failed", "cleaned", "unsynced", "all"];
+    var known = ["synced", "failed", "cleaned", "unsynced", "syncing", "all"];
     if (known.indexOf(state) === -1) {
       key = "state.unknown";
     }
     return t(key);
   }
 
-  function stateBadge(state) {
-    var label = state || "unknown";
-    return el("span", "badge state-" + label, stateLabel(state));
+  function stateBadge(item) {
+    var state = item && item.state ? item.state : "unknown";
+    var label = stateLabel(state);
+    if (state === "syncing") {
+      var pct = item.progress != null ? Math.round(item.progress) : 0;
+      label = label + " " + pct + "%";
+    }
+    return el("span", "badge state-" + state, label);
   }
 
   function fileRow(item) {
@@ -784,7 +792,7 @@
     tr.appendChild(el("td", "cell-size", formatBytes(item.size)));
 
     var stateCell = el("td");
-    stateCell.appendChild(stateBadge(item.state));
+    stateCell.appendChild(stateBadge(item));
     tr.appendChild(stateCell);
 
     var cloudStatusCell = el("td");

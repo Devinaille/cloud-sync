@@ -276,6 +276,10 @@ main {
   border-top-color: var(--blue);
 }
 
+.stat[data-state="syncing"] {
+  border-top-color: var(--accent, var(--blue));
+}
+
 .stat-value {
   font-size: 1.9rem;
   font-weight: 700;
@@ -388,6 +392,11 @@ main {
 
 .badge.state-unsynced {
   background: rgba(47, 111, 237, 0.16);
+  color: var(--blue);
+}
+
+.badge.state-syncing {
+  background: rgba(47, 111, 237, 0.26);
   color: var(--blue);
 }
 
