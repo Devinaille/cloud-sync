@@ -340,3 +340,9 @@ tar xzf cs.tgz
 ```
 
 Web UI：`http://<host>:8099/`（config 里 `ui_listen` 默认 `:8099`）。
+
+## 开源协议
+
+本项目采用 [GNU General Public License v2.0](LICENSE)（`GPL-2.0-only`），完整条款见 [`LICENSE`](./LICENSE)。
+
+Copyright (C) 2026 滿開 (Devinaille)

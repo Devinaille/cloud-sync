@@ -322,3 +322,9 @@ YAML 与 env 同名（小写 ↔ 大写）。下表是底层 env 名：
 | `code=403 msg=file [X] exists` | 客户端同时发了 `overwrite=false` + `skip_existing=false`（不该发生；检查配置）。 |
 | 文件改了但容器还是旧值 | 配置文件是挂载的（`:rw`），改完主机文件后 `docker compose restart cloud-sync`，不是 `up`（或用 Web UI 的 Save & Reload 热重载）。 |
 | UI 打不开 | `UI_LISTEN` 为空/`-` 被禁用、端口未映射（compose `ports`）、或进程未监听（日志里找 `web ui listening`）。 |
+
+## 开源协议
+
+本项目采用 [GNU General Public License v2.0](../LICENSE)（`GPL-2.0-only`），完整条款见 [`LICENSE`](../LICENSE)。
+
+Copyright (C) 2026 滿開 (Devinaille)

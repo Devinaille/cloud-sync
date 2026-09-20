@@ -81,6 +81,7 @@ jobs:
           mkdir -p "dist/$STAGE"
           cp cloud-sync/cloud-sync "dist/$STAGE/cloud-sync"
           cp cloud-sync/README.md "dist/$STAGE/README.md"
+          cp LICENSE "dist/$STAGE/LICENSE"
           tar -C dist -czf "dist/${STAGE}.tar.gz" "$STAGE"
           rm -rf "dist/$STAGE"
           ( cd dist && sha256sum -- *.tar.gz > SHA256SUMS )
