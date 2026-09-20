@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -20,6 +21,7 @@ import (
 type Uploader interface {
 	Copy(ctx context.Context, srcDir, srcName, dstDir, dstName string, overwrite bool) (string, error)
 	TaskDone(ctx context.Context, taskID string) (openlist.TaskStatus, error)
+	Exists(ctx context.Context, path string) (bool, error)
 }
 
 type Pipeline struct {
@@ -201,15 +203,51 @@ func (p *Pipeline) computeKey(absPath string) (key, srcDir, srcName, dstDir, dst
 	return
 }
 
+// errTaskTimeout marks a copy task that exceeded the configured per-task
+// budget. The server-side task may still be running, so a timeout must NOT
+// trigger another Copy (that would start a duplicate transfer).
+var errTaskTimeout = errors.New("openlist task timed out")
+
+// writeSynced persists a successful upload record.
+func (p *Pipeline) writeSynced(key, absPath, cloudPath, taskID string, info os.FileInfo) error {
+	now := time.Now().UTC()
+	rec := &state.StatusRecord{
+		Key:            key,
+		SrcPath:        absPath,
+		SrcSize:        info.Size(),
+		SrcMtime:       info.ModTime().UTC(),
+		CloudPath:      cloudPath,
+		OpenListTaskID: taskID,
+		SyncedAt:       now,
+		CleanupAt:      now.Add(p.cfg.CleanupAfter),
+		Status:         "synced",
+	}
+	if err := p.st.Write(rec); err != nil {
+		return fmt.Errorf("write state: %w", err)
+	}
+	p.log.Info("pipeline: synced", "key", key, "task_id", taskID)
+	return nil
+}
+
 func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcDir, srcName, dstDir, dstName string, info os.FileInfo) error {
 	const maxAttempts = 3
+	cloudPath := dstDir + "/" + dstName
 	var lastErr error
 	backoff := time.Second
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		taskCtx, cancel := context.WithTimeout(ctx, p.cfg.TaskTimeout)
-		taskID, err := p.up.Copy(taskCtx, srcDir, srcName, dstDir, dstName, p.cfg.OpenListOverwrite)
+		copyCtx, cancel := context.WithTimeout(ctx, p.cfg.TaskTimeout)
+		taskID, err := p.up.Copy(copyCtx, srcDir, srcName, dstDir, dstName, p.cfg.OpenListOverwrite)
+		cancel()
 		if err != nil {
-			cancel()
+			// The response may have been lost after OpenList queued the task.
+			// Check the destination before re-copying so we do not start a
+			// duplicate transfer. (A pre-existing destination would have made
+			// skip_existing return no task, so reaching here with it present
+			// means the copy landed.)
+			if exists, xerr := p.up.Exists(ctx, cloudPath); xerr == nil && exists {
+				p.log.Info("pipeline: copy errored but destination exists; treating as synced", "key", key, "err", err)
+				return p.writeSynced(key, absPath, cloudPath, "", info)
+			}
 			lastErr = err
 			p.log.Warn("pipeline: copy error, retrying", "attempt", attempt, "err", err)
 			if attempt == maxAttempts {
@@ -221,42 +259,34 @@ func (p *Pipeline) uploadWithRetry(ctx context.Context, key, absPath, srcDir, sr
 			backoff = nextBackoff(backoff)
 			continue
 		}
-		// poll the async task until it reaches a terminal state.
+		// Poll the async task until it reaches a terminal state. A poll
+		// transport error does NOT mean the task failed: OpenList keeps copying
+		// server-side, so keep polling the same task instead of re-issuing Copy.
+		start := time.Now()
 		for {
-			st, err := p.up.TaskDone(taskCtx, taskID)
-			if err != nil {
-				cancel()
-				lastErr = err
-				break // retry whole task
+			if cerr := ctx.Err(); cerr != nil {
+				return cerr
+			}
+			if time.Since(start) > p.cfg.TaskTimeout {
+				return fmt.Errorf("%w after %s", errTaskTimeout, time.Since(start).Round(time.Second))
+			}
+			st, perr := p.up.TaskDone(ctx, taskID)
+			if perr != nil {
+				p.log.Warn("pipeline: task poll error, continuing", "task_id", taskID, "err", perr)
+				if !sleepCtx(ctx, p.cfg.PollInterval) {
+					return ctx.Err()
+				}
+				continue
 			}
 			switch st {
 			case openlist.TaskPending:
 				if !sleepCtx(ctx, p.cfg.PollInterval) {
-					cancel()
 					return ctx.Err()
 				}
 				continue
 			case openlist.TaskSucceeded:
-				cancel()
-				now := time.Now().UTC()
-				rec := &state.StatusRecord{
-					Key:            key,
-					SrcPath:        absPath,
-					SrcSize:        info.Size(),
-					SrcMtime:       info.ModTime().UTC(),
-					CloudPath:      dstDir + "/" + dstName,
-					OpenListTaskID: taskID,
-					SyncedAt:       now,
-					CleanupAt:      now.Add(p.cfg.CleanupAfter),
-					Status:         "synced",
-				}
-				if err := p.st.Write(rec); err != nil {
-					return fmt.Errorf("write state: %w", err)
-				}
-				p.log.Info("pipeline: synced", "key", key, "task_id", taskID)
-				return nil
+				return p.writeSynced(key, absPath, cloudPath, taskID, info)
 			case openlist.TaskFailed:
-				cancel()
 				lastErr = fmt.Errorf("openlist task failed")
 				goto RETRY
 			}
