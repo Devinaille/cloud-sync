@@ -141,7 +141,3 @@ func (w *WebServer) handleTasks(rw http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(rw, http.StatusOK, statusPayload(r.Context(), w.sup))
 }
-
-// handlePrecheck runs (POST) or returns (GET) the upload pre-check report. It
-// only reads the filesystem and writes the report file, so it is allowed while
-// tasks are paused.

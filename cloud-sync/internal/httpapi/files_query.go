@@ -35,6 +35,8 @@ func applyInflight(items []fileItem, inflight map[string]float64) {
 	}
 }
 
+// buildFileItems merges persisted records with unsynced files found by walking
+// the watch dirs. Record keys win over unsynced duplicates.
 func buildFileItems(cfg *config.Config, st *state.StateManager, records []*state.StatusRecord) ([]fileItem, error) {
 	items := make([]fileItem, 0, len(records))
 	seen := make(map[string]struct{}, len(records))
@@ -116,12 +118,8 @@ func unsyncedFiles(cfg *config.Config, st *state.StateManager) ([]*state.StatusR
 	return out, nil
 }
 
-// runPrecheck walks the watch dirs and reports which files would be uploaded if
-// tasks were running, then probes OpenList to see whether each candidate already
-// exists on the cloud. It never touches sync status records.
-//
-// cloudExists reports cloud-side existence; a transport error marks the
-// candidate "unknown" (and CloudChecked=false) rather than failing the report.
+// cloudPathFor maps a watch-relative key to its OpenList path, mirroring the
+// pipeline's layout: <DstStorage>/media/<rel>.
 func cloudPathFor(cfg *config.Config, key string) string {
 	p := cfg.DstStorage + "/media"
 	if parent := path.Dir(key); parent != "." && parent != "" {
@@ -130,8 +128,8 @@ func cloudPathFor(cfg *config.Config, key string) string {
 	return p + "/" + path.Base(key)
 }
 
-// writePrecheck persists a report atomically under the status dir. The file
-// lives beside the date buckets and is ignored by record scanning.
+// applyCloudStatus fills each item's Cloud field: synced records are known to
+// exist on the cloud; other files use the last pre-check's result when present.
 func applyCloudStatus(cfg *config.Config, items []fileItem) {
 	byKey := map[string]string{}
 	if rep, err := readPrecheck(cfg.SyncStatusDir); err == nil && rep != nil {

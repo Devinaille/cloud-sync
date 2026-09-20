@@ -14,6 +14,9 @@ import (
 	"cloud-sync/internal/state"
 )
 
+// handlePrecheck runs (POST) or returns (GET) the upload pre-check report. It
+// only reads the filesystem and writes the report file, so it is allowed while
+// tasks are paused.
 func (w *WebServer) handlePrecheck(rw http.ResponseWriter, r *http.Request) {
 	cfg, st, _, ok := w.sup.Snapshot()
 	if !ok {
@@ -50,6 +53,12 @@ func (w *WebServer) handlePrecheck(rw http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// runPrecheck walks the watch dirs and reports which files would be uploaded if
+// tasks were running, then probes OpenList to see whether each candidate already
+// exists on the cloud. It never touches sync status records.
+//
+// cloudExists reports cloud-side existence; a transport error marks the
+// candidate "unknown" (and CloudChecked=false) rather than failing the report.
 func runPrecheck(ctx context.Context, cfg *config.Config, st *state.StateManager, cloudExists func(context.Context, string) (bool, error)) (*precheckReport, error) {
 	rep := &precheckReport{
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
@@ -125,8 +134,8 @@ func runPrecheck(ctx context.Context, cfg *config.Config, st *state.StateManager
 	return rep, nil
 }
 
-// cloudPathFor maps a watch-relative key to its OpenList path, mirroring the
-// pipeline's layout: <DstStorage>/media/<rel>.
+// writePrecheck persists a report atomically under the status dir. The file
+// lives beside the date buckets and is ignored by record scanning.
 func writePrecheck(dir string, rep *precheckReport) error {
 	data, err := json.MarshalIndent(rep, "", "  ")
 	if err != nil {
@@ -154,6 +163,3 @@ func readPrecheck(dir string) (*precheckReport, error) {
 	}
 	return &rep, nil
 }
-
-// applyCloudStatus fills each item's Cloud field: synced records are known to
-// exist on the cloud; other files use the last pre-check's result when present.

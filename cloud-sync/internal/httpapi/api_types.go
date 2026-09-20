@@ -1,5 +1,6 @@
 package httpapi
 
+// statusResponse is the payload for GET /api/status.
 type statusResponse struct {
 	OK            bool         `json:"ok"`
 	Error         string       `json:"error,omitempty"`

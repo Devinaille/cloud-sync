@@ -112,6 +112,3 @@ func statusPayload(ctx context.Context, sup *supervisor.Supervisor) statusRespon
 func listRecords(st *state.StateManager) ([]*state.StatusRecord, error) {
 	return st.ListAll()
 }
-
-// buildFileItems merges persisted records with unsynced files found by walking
-// the watch dirs. Record keys win over unsynced duplicates.

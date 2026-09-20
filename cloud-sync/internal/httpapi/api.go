@@ -15,7 +15,7 @@ const (
 	pingTimeout = 3 * time.Second
 )
 
-// statusResponse is the payload for GET /api/status.
+// dedupeStrings removes empty and duplicate entries, preserving order.
 func dedupeStrings(in []string) []string {
 	seen := make(map[string]struct{}, len(in))
 	out := make([]string, 0, len(in))
