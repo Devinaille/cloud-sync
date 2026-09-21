@@ -242,6 +242,31 @@ http://<host>:8099/
 - 改 `ui_listen`（`UI_LISTEN`）需要**重启进程**生效——监听地址在启动时绑定，配置热重载不会换端口。
 - 裸机/systemd 部署时，`ProtectSystem` / `ReadWritePaths` 需允许写配置文件所在目录，否则「Save & Reload」会失败。
 
+### 监控（Homepage）
+
+[Homepage](https://gethomepage.dev/) 可用 `customapi` 小部件监控各文件状态（数据来自 `GET /api/status`，无鉴权）。**注意：block 视图最多显示 4 个字段**，下面取最关键的四个（`已同步 / 上传中 / 未同步 / 失败`）：
+
+```yaml
+- Media:
+    - Cloud Sync:
+        icon: mdi-cloud-sync
+        href: http://<host>:8099/
+        widget:
+          type: customapi
+          url: http://cloud-sync:8099/api/status   # 与 cloud-sync 同 docker 网络时用容器名，否则用宿主 IP
+          refreshInterval: 10000                    # 毫秒；/api/status 会 ping OpenList 并遍历 watch 目录，别设太密
+          mappings:
+            - { field: counts.synced,   label: 已同步, format: number }
+            - { field: counts.syncing,  label: 上传中, format: number }
+            - { field: counts.unsynced, label: 未同步, format: number }
+            - { field: counts.failed,   label: 失败,   format: number }
+```
+
+- 字段含义：`unsynced`=尚无状态的候选文件，`syncing`=正在上传，`synced`/`failed`/`cleaned`=已落盘记录（`failed` 会阻塞自动重传，需在 UI 手动重试）。
+- 想看其余状态（`counts.cleaned`）或附加项（`openlist_ping`、`tasks_running`、`uptime_seconds`、`version`）：再挂一个小部件指向同一 `url`（各取 4 个字段即可）。
+- `customapi` 不支持块高亮，`failed` 不会自动变红；需要"失败即红"可另配 Homepage 的 `ping` / `siteMonitor`。
+- 布尔值可直接 `format: text`，或用 `remap` 映射成中文（如 `openlist_ping` → 在线/离线）。
+
 ---
 
 ## 本地开发/测试
