@@ -235,7 +235,7 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 
 二进制内嵌一个单页 UI + JSON API，默认监听 `:8099`（`UI_LISTEN` / `ui_listen`；显式空字符串或 `-` 禁用）。浏览器打开 `http://<host>:8099/`。
 
-三个 Tab：**Dashboard**（计数 / OpenList 连通性 / uptime / watch 目录 / 手动 cleanup）、**Files**（筛选 / 搜索 / 分页 / 勾选重试）、**Config**（编辑 YAML + Save & Reload）。
+三个 Tab：**Dashboard**（计数 / OpenList 连通性 / uptime / watch 目录 / 手动 cleanup）、**Files**（筛选 / 搜索 / 分页 / 勾选重试）、**Config**（默认表单化填写 + 「高级（YAML）」原文编辑 + 「重新生成 YAML」）。
 
 支持中英文切换（右上角 `EN / 中文`），默认跟随浏览器语言，选择存于 `localStorage`。
 

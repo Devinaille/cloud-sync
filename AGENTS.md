@@ -27,6 +27,19 @@ CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o cloud-sync .
 - `internal/openlist` targets OpenList v4: `POST /api/fs/copy` with `names[]` (not `src_name`/`dst_name`) + `skip_existing`/`overwrite`; async task polled via `POST /api/admin/task/copy/info`. Mock server: `scripts/mock-openlist.py`.
 - Web assets `cloud-sync/internal/httpapi/web/` are `//go:embed web`ed in `internal/httpapi/web.go` — editing `index.html`/`app.js`/`style.css` requires a rebuild; there is no live-reload server.
 
+## Frontend / backend boundary
+
+- `internal/httpapi` is the transport layer only: parse the request, call a
+  domain/service function, write the response. **No file I/O and no business
+  logic in handlers** — and none in `web/`.
+- All config file reads/writes, YAML merge, validation and rendering live in
+  `internal/config` (`ReadFile`, `SaveRaw`, `MergeAndSave`, `RegenerateAndSave`,
+  `Render`); handlers only call them and then `Supervisor.Reload`.
+- The browser (`internal/httpapi/web/`) only renders state, collects input and
+  calls the JSON API. It never builds YAML or touches files.
+- Keep dependencies one-way: `config` must not import `supervisor`/`httpapi`;
+  `httpapi` depends on both and wires them together.
+
 ## Testing quirks
 
 - Tests inject uploaders via `SupervisorDeps.NewUploader` (fake in `internal/mockopenlist`, shared fixtures in `internal/testutil`); no real OpenList needed. `newTestSupervisor` sleeps ~50ms for the startup scan and registers `t.Cleanup(sup.Stop)`.
