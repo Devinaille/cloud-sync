@@ -167,28 +167,56 @@
 
       <!-- Config -->
       <section class="panel" id="panel-config">
-        <div class="config-grid">
+        <div class="config-modes" id="config-modes">
+          <button class="chip active" type="button" data-mode="form" data-i18n="config.mode.form">Form</button>
+          <button class="chip" type="button" data-mode="yaml" data-i18n="config.mode.yaml">Advanced (YAML)</button>
+        </div>
+
+        <div id="config-form-view">
           <div class="card">
             <div class="row-between">
-              <h2 data-i18n="config.title">Configuration (YAML)</h2>
+              <h2 data-i18n="config.form.title">Configuration</h2>
               <div class="actions">
-                <button class="btn" type="button" id="config-reload" data-i18n="config.reload">
+                <button class="btn" type="button" id="config-form-reload" data-i18n="config.reload">
                   Reload from server
                 </button>
-                <button class="btn primary" type="button" id="config-save" data-i18n="config.save">
+                <button class="btn" type="button" id="config-regenerate" data-i18n="config.regenerate">
+                  Regenerate YAML
+                </button>
+                <button class="btn primary" type="button" id="config-form-save" data-i18n="config.save">
                   Save &amp; Reload
                 </button>
               </div>
             </div>
-            <p class="inline-error hidden" id="config-error"></p>
-            <textarea id="config-yaml" spellcheck="false" wrap="off"></textarea>
+            <p class="inline-error hidden" id="config-form-error"></p>
+            <div id="config-form" class="config-form"></div>
           </div>
+        </div>
 
-          <div class="card">
-            <h2 data-i18n="config.effective">Effective config</h2>
-            <dl class="effective" id="effective-config">
-              <dd class="muted" data-i18n="config.loading">Loading&hellip;</dd>
-            </dl>
+        <div id="config-yaml-view" class="hidden">
+          <div class="config-grid">
+            <div class="card">
+              <div class="row-between">
+                <h2 data-i18n="config.title">Configuration (YAML)</h2>
+                <div class="actions">
+                  <button class="btn" type="button" id="config-reload" data-i18n="config.reload">
+                    Reload from server
+                  </button>
+                  <button class="btn primary" type="button" id="config-save" data-i18n="config.save">
+                    Save &amp; Reload
+                  </button>
+                </div>
+              </div>
+              <p class="inline-error hidden" id="config-error"></p>
+              <textarea id="config-yaml" spellcheck="false" wrap="off"></textarea>
+            </div>
+
+            <div class="card">
+              <h2 data-i18n="config.effective">Effective config</h2>
+              <dl class="effective" id="effective-config">
+                <dd class="muted" data-i18n="config.loading">Loading&hellip;</dd>
+              </dl>
+            </div>
           </div>
         </div>
       </section>

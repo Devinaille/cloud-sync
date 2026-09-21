@@ -105,6 +105,47 @@
       "config.emptyToast": "Config is empty; not saved.",
       "config.saved": "Config saved and reloaded.",
       "config.saveFailed": "Save failed: {e}",
+      "config.mode.form": "Form",
+      "config.mode.yaml": "Advanced (YAML)",
+      "config.form.title": "Configuration",
+      "config.regenerate": "Regenerate YAML",
+      "config.regenerateConfirm": "Regenerate the config file from current values? Comments and formatting in the existing file will be lost.",
+      "config.regenerated": "Config regenerated.",
+      "config.regenerateFailed": "Regenerate failed: {e}",
+      "config.restart": "restart required",
+      "config.minFileSize": "Min file size (read-only): {bytes}",
+      "config.field.tokenPlaceholder": "leave blank to keep current",
+      "config.group.openlist": "OpenList",
+      "config.group.watch": "Watching & filtering",
+      "config.group.upload": "Tasks & upload",
+      "config.group.cleanup": "Cleanup",
+      "config.group.logging": "Logging & UI",
+      "config.field.openlist_url": "OpenList URL",
+      "config.field.openlist_url.help": "e.g. http://openlist:5244",
+      "config.field.openlist_token": "OpenList token",
+      "config.field.openlist_token.help": "Leave blank to keep the current token.",
+      "config.field.openlist_src_storage": "Source storage root",
+      "config.field.openlist_dst_storage": "Destination storage root",
+      "config.field.openlist_overwrite": "Overwrite existing cloud files",
+      "config.field.openlist_overwrite.help": "Off: skip existing (recommended). On: replace.",
+      "config.field.watch_dirs": "Watch directories",
+      "config.field.watch_dirs.help": "One absolute path per line; paths must exist.",
+      "config.field.allowed_source_prefixes": "Allowed source prefixes",
+      "config.field.allowed_source_prefixes.help": "Cleanup only deletes under these prefixes.",
+      "config.field.sync_status_dir": "Sync status dir",
+      "config.field.tasks_enabled": "Start tasks on boot",
+      "config.field.upload_concurrency": "Upload concurrency",
+      "config.field.stabilize_wait_seconds": "Stabilize wait (seconds)",
+      "config.field.poll_interval_seconds": "Poll interval (seconds)",
+      "config.field.task_timeout_seconds": "Request timeout (seconds)",
+      "config.field.cleanup_after_hours": "Cleanup after (hours)",
+      "config.field.cleanup_dry_run": "Cleanup dry run",
+      "config.field.cleanup_dry_run.help": "On: only log what would be deleted.",
+      "config.field.log_level": "Log level",
+      "config.field.log_file": "Log file",
+      "config.field.log_file.help": "Empty = stdout.",
+      "config.field.ui_listen": "Web UI listen",
+      "config.field.ui_listen.help": "Empty or \"-\" disables the UI.",
       "cfg.openlist_url": "OpenList URL",
       "cfg.openlist_overwrite": "Overwrite existing",
       "cfg.cleanup_dry_run": "Cleanup dry-run",
@@ -210,6 +251,47 @@
       "config.emptyToast": "配置为空，未保存。",
       "config.saved": "配置已保存并重载。",
       "config.saveFailed": "保存失败：{e}",
+      "config.mode.form": "表单",
+      "config.mode.yaml": "高级（YAML）",
+      "config.form.title": "配置",
+      "config.regenerate": "重新生成 YAML",
+      "config.regenerateConfirm": "将按当前值重新生成配置文件？现有文件中的注释与格式会丢失。",
+      "config.regenerated": "配置已重新生成。",
+      "config.regenerateFailed": "重新生成失败：{e}",
+      "config.restart": "需重启",
+      "config.minFileSize": "最小文件大小（只读）：{bytes}",
+      "config.field.tokenPlaceholder": "留空表示不修改",
+      "config.group.openlist": "OpenList",
+      "config.group.watch": "监听与过滤",
+      "config.group.upload": "任务与上传",
+      "config.group.cleanup": "清理",
+      "config.group.logging": "日志与界面",
+      "config.field.openlist_url": "OpenList 地址",
+      "config.field.openlist_url.help": "如 http://openlist:5244",
+      "config.field.openlist_token": "OpenList Token",
+      "config.field.openlist_token.help": "留空表示保留当前 token。",
+      "config.field.openlist_src_storage": "源存储根路径",
+      "config.field.openlist_dst_storage": "目标存储根路径",
+      "config.field.openlist_overwrite": "覆盖云端同名文件",
+      "config.field.openlist_overwrite.help": "关闭：跳过已存在（推荐）。开启：覆盖。",
+      "config.field.watch_dirs": "监听目录",
+      "config.field.watch_dirs.help": "每行一个绝对路径；路径必须存在。",
+      "config.field.allowed_source_prefixes": "允许清理的路径前缀",
+      "config.field.allowed_source_prefixes.help": "清理只会删除这些前缀下的文件。",
+      "config.field.sync_status_dir": "状态目录",
+      "config.field.tasks_enabled": "启动时开启任务",
+      "config.field.upload_concurrency": "上传并发",
+      "config.field.stabilize_wait_seconds": "稳定等待（秒）",
+      "config.field.poll_interval_seconds": "轮询间隔（秒）",
+      "config.field.task_timeout_seconds": "单次请求超时（秒）",
+      "config.field.cleanup_after_hours": "上传后清理（小时）",
+      "config.field.cleanup_dry_run": "清理演练",
+      "config.field.cleanup_dry_run.help": "开启时只记录将删除哪些文件。",
+      "config.field.log_level": "日志级别",
+      "config.field.log_file": "日志文件",
+      "config.field.log_file.help": "留空 = 输出到 stdout。",
+      "config.field.ui_listen": "Web UI 监听地址",
+      "config.field.ui_listen.help": "留空或 \"-\" 表示关闭 UI。",
       "cfg.openlist_url": "OpenList 地址",
       "cfg.openlist_overwrite": "覆盖已有文件",
       "cfg.cleanup_dry_run": "清理 dry-run",
@@ -290,6 +372,8 @@
   var currentTab = "dashboard";
   var lastStatus = null;
   var lastConfig = null;
+  var lastConfigForm = null;
+  var configMode = "form";
 
   // ---- tiny helpers ----------------------------------------------------
 
@@ -1060,6 +1144,262 @@
     }
   }
 
+  // ---- config form -----------------------------------------------------
+
+  var CONFIG_FIELDS = [
+    { group: "config.group.openlist", fields: [
+      { key: "openlist_url", type: "text" },
+      { key: "openlist_token", type: "password" },
+      { key: "openlist_src_storage", type: "text" },
+      { key: "openlist_dst_storage", type: "text" },
+      { key: "openlist_overwrite", type: "bool" },
+    ] },
+    { group: "config.group.watch", fields: [
+      { key: "watch_dirs", type: "list" },
+      { key: "allowed_source_prefixes", type: "list" },
+      { key: "sync_status_dir", type: "text" },
+    ] },
+    { group: "config.group.upload", fields: [
+      { key: "tasks_enabled", type: "bool" },
+      { key: "upload_concurrency", type: "number", min: 1 },
+      { key: "stabilize_wait_seconds", type: "number", min: 1 },
+      { key: "poll_interval_seconds", type: "number", min: 1 },
+      { key: "task_timeout_seconds", type: "number", min: 1 },
+    ] },
+    { group: "config.group.cleanup", fields: [
+      { key: "cleanup_after_hours", type: "number", min: 1 },
+      { key: "cleanup_dry_run", type: "bool" },
+    ] },
+    { group: "config.group.logging", fields: [
+      { key: "log_level", type: "select", options: ["debug", "info", "warn", "error"] },
+      { key: "log_file", type: "text" },
+      { key: "ui_listen", type: "text", restart: true },
+    ] },
+  ];
+
+  function showConfigFormError(message) {
+    var node = byId("config-form-error");
+    if (node) {
+      node.textContent = message;
+      show(node);
+    }
+  }
+
+  function hideConfigFormError() {
+    var node = byId("config-form-error");
+    if (node) {
+      node.textContent = "";
+      hide(node);
+    }
+  }
+
+  function configFormField(f, values) {
+    var wrap = el("div", "form-field");
+    var id = "cfg-" + f.key;
+    var label = el("label", "form-label", t("config.field." + f.key));
+    label.setAttribute("for", id);
+    if (f.restart) {
+      label.appendChild(el("span", "restart-tag", t("config.restart")));
+    }
+    wrap.appendChild(label);
+
+    var val = values ? values[f.key] : undefined;
+    var input;
+    if (f.type === "bool") {
+      input = el("input", "form-input form-checkbox");
+      input.type = "checkbox";
+      input.checked = !!val;
+    } else if (f.type === "list") {
+      input = el("textarea", "form-input form-textarea");
+      input.rows = 3;
+      input.spellcheck = false;
+      input.value = Array.isArray(val) ? val.join("\n") : "";
+    } else if (f.type === "select") {
+      input = el("select", "form-input");
+      (f.options || []).forEach(function (o) {
+        var opt = el("option", null, o);
+        opt.value = o;
+        if (val === o) {
+          opt.selected = true;
+        }
+        input.appendChild(opt);
+      });
+    } else {
+      input = el("input", "form-input");
+      if (f.type === "number") {
+        input.type = "number";
+        if (f.min != null) {
+          input.min = String(f.min);
+        }
+      } else if (f.type === "password") {
+        input.type = "password";
+        input.autocomplete = "new-password";
+        input.placeholder = t("config.field.tokenPlaceholder");
+      } else {
+        input.type = "text";
+      }
+      input.value = val != null ? String(val) : "";
+    }
+    input.id = id;
+    input.setAttribute("data-key", f.key);
+    input.setAttribute("data-type", f.type);
+    wrap.appendChild(input);
+
+    var helpKey = "config.field." + f.key + ".help";
+    var help = t(helpKey);
+    if (help !== helpKey) {
+      wrap.appendChild(el("p", "form-help", help));
+    }
+    return wrap;
+  }
+
+  function renderConfigForm(meta) {
+    var root = byId("config-form");
+    if (!root) {
+      return;
+    }
+    root.textContent = "";
+    var values = meta ? meta.values : {};
+    CONFIG_FIELDS.forEach(function (group) {
+      var section = el("div", "form-group");
+      section.appendChild(el("h3", "form-group-title", t(group.group)));
+      var grid = el("div", "form-grid");
+      group.fields.forEach(function (f) {
+        grid.appendChild(configFormField(f, values));
+      });
+      section.appendChild(grid);
+      root.appendChild(section);
+    });
+    if (meta) {
+      root.appendChild(
+        el(
+          "p",
+          "form-note",
+          t("config.minFileSize", { bytes: formatBytes(meta.min_file_size_bytes) }) +
+            " \u00b7 " +
+            meta.config_path
+        )
+      );
+    }
+  }
+
+  function collectConfigForm() {
+    var values = {};
+    Array.prototype.forEach.call(
+      document.querySelectorAll("#config-form [data-key]"),
+      function (input) {
+        var key = input.getAttribute("data-key");
+        var type = input.getAttribute("data-type");
+        if (type === "bool") {
+          values[key] = input.checked;
+        } else if (type === "number") {
+          values[key] = parseInt(input.value, 10) || 0;
+        } else if (type === "list") {
+          values[key] = input.value
+            .split("\n")
+            .map(function (s) {
+              return s.trim();
+            })
+            .filter(function (s) {
+              return s !== "";
+            });
+        } else {
+          values[key] = input.value;
+        }
+      }
+    );
+    return values;
+  }
+
+  async function loadConfigForm() {
+    try {
+      var data = await api("/api/config/form");
+      lastConfigForm = data;
+      renderConfigForm(data);
+      hideConfigFormError();
+    } catch (e) {
+      showConfigFormError(t("config.loadFailed", { e: e.message }));
+      toast(t("config.loadFailed", { e: e.message }), "error");
+    }
+  }
+
+  async function saveConfigForm() {
+    var values = collectConfigForm();
+    var btn = byId("config-form-save");
+    if (btn) {
+      btn.disabled = true;
+    }
+    try {
+      var data = await api("/api/config/form", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ values: values }),
+      });
+      hideConfigFormError();
+      toast(t("config.saved"), "success");
+      if (data && data.status) {
+        renderStatus(data.status);
+      }
+      await loadStatus();
+      await loadConfigForm();
+    } catch (e) {
+      showConfigFormError(e.message);
+      toast(t("config.saveFailed", { e: e.message }), "error");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+      }
+    }
+  }
+
+  async function regenerateConfig() {
+    if (!window.confirm(t("config.regenerateConfirm"))) {
+      return;
+    }
+    var btn = byId("config-regenerate");
+    if (btn) {
+      btn.disabled = true;
+    }
+    try {
+      var data = await api("/api/config/regenerate", { method: "POST" });
+      toast(t("config.regenerated"), "success");
+      if (data && data.status) {
+        renderStatus(data.status);
+      }
+      await loadStatus();
+      await loadConfigForm();
+    } catch (e) {
+      toast(t("config.regenerateFailed", { e: e.message }), "error");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+      }
+    }
+  }
+
+  function setConfigMode(mode) {
+    configMode = mode === "yaml" ? "yaml" : "form";
+    Array.prototype.forEach.call(
+      document.querySelectorAll("#config-modes .chip"),
+      function (c) {
+        c.classList.toggle("active", c.getAttribute("data-mode") === configMode);
+      }
+    );
+    var formView = byId("config-form-view");
+    var yamlView = byId("config-yaml-view");
+    if (formView) {
+      formView.classList.toggle("hidden", configMode !== "form");
+    }
+    if (yamlView) {
+      yamlView.classList.toggle("hidden", configMode !== "yaml");
+    }
+    if (configMode === "form") {
+      loadConfigForm();
+    } else {
+      loadConfig();
+    }
+  }
+
   // ---- tabs ------------------------------------------------------------
 
   function showTab(name) {
@@ -1077,7 +1417,11 @@
       loadFiles();
     } else if (name === "config") {
       loadStatus();
-      loadConfig();
+      if (configMode === "form") {
+        loadConfigForm();
+      } else {
+        loadConfig();
+      }
     }
   }
 
@@ -1102,6 +1446,9 @@
     renderTasks(lastStatus);
     renderFiles();
     renderEffectiveConfig(lastConfig);
+    if (configMode === "form" && lastConfigForm) {
+      renderConfigForm(lastConfigForm);
+    }
     renderConn();
   }
 
@@ -1224,6 +1571,27 @@
     var reloadBtn = byId("config-reload");
     if (reloadBtn) {
       reloadBtn.addEventListener("click", loadConfig);
+    }
+
+    Array.prototype.forEach.call(
+      document.querySelectorAll("#config-modes .chip"),
+      function (chip) {
+        chip.addEventListener("click", function () {
+          setConfigMode(chip.getAttribute("data-mode"));
+        });
+      }
+    );
+    var formSaveBtn = byId("config-form-save");
+    if (formSaveBtn) {
+      formSaveBtn.addEventListener("click", saveConfigForm);
+    }
+    var formReloadBtn = byId("config-form-reload");
+    if (formReloadBtn) {
+      formReloadBtn.addEventListener("click", loadConfigForm);
+    }
+    var regenBtn = byId("config-regenerate");
+    if (regenBtn) {
+      regenBtn.addEventListener("click", regenerateConfig);
     }
 
     document.addEventListener("visibilitychange", onVisibilityChange);
