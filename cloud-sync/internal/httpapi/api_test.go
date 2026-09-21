@@ -679,3 +679,127 @@ func TestApplyInflight(t *testing.T) {
 		t.Errorf("C = %q/%.1f, want syncing/7", items[2].State, items[2].Progress)
 	}
 }
+
+func TestAPI_ConfigForm_Get(t *testing.T) {
+	env := newTestSupervisor(t)
+	srv := env.server(t)
+
+	var body struct {
+		Values           config.FormValues `json:"values"`
+		TokenSet         bool              `json:"token_set"`
+		ConfigPath       string            `json:"config_path"`
+		MinFileSizeBytes int64             `json:"min_file_size_bytes"`
+		RestartFields    []string          `json:"restart_fields"`
+	}
+	if code := getJSON(t, srv.URL+"/api/config/form", &body); code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", code)
+	}
+	if body.Values.OpenListURL == "" || len(body.Values.WatchDirs) == 0 {
+		t.Errorf("values incomplete: %+v", body.Values)
+	}
+	if body.Values.OpenListToken != "" {
+		t.Errorf("token must not be returned, got %q", body.Values.OpenListToken)
+	}
+	if !body.TokenSet {
+		t.Error("token_set = false, want true")
+	}
+	if body.ConfigPath != env.cfgPath {
+		t.Errorf("config_path = %q, want %q", body.ConfigPath, env.cfgPath)
+	}
+	if body.MinFileSizeBytes <= 0 {
+		t.Errorf("min_file_size_bytes = %d, want > 0", body.MinFileSizeBytes)
+	}
+	found := false
+	for _, f := range body.RestartFields {
+		if f == "ui_listen" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("restart_fields = %v, want to include ui_listen", body.RestartFields)
+	}
+}
+
+func TestAPI_ConfigForm_PutUpdatesAndKeepsToken(t *testing.T) {
+	env := newTestSupervisor(t)
+	srv := env.server(t)
+
+	var form struct {
+		Values config.FormValues `json:"values"`
+	}
+	if code := getJSON(t, srv.URL+"/api/config/form", &form); code != http.StatusOK {
+		t.Fatalf("GET form code = %d", code)
+	}
+	form.Values.UploadConcurrency = 5
+	form.Values.OpenListToken = "" // keep existing
+
+	var putResp configPutResponse
+	if code := doJSON(t, http.MethodPut, srv.URL+"/api/config/form",
+		map[string]any{"values": form.Values}, &putResp); code != http.StatusOK {
+		t.Fatalf("PUT form code = %d, want 200", code)
+	}
+
+	var cfgResp struct {
+		YAML string `json:"yaml"`
+	}
+	getJSON(t, srv.URL+"/api/config", &cfgResp)
+	if !strings.Contains(cfgResp.YAML, "upload_concurrency: 5") {
+		t.Errorf("yaml not updated:\n%s", cfgResp.YAML)
+	}
+	if !strings.Contains(cfgResp.YAML, "tok") {
+		t.Errorf("token was dropped:\n%s", cfgResp.YAML)
+	}
+
+	var status struct {
+		Config *configView `json:"config"`
+	}
+	getJSON(t, srv.URL+"/api/status", &status)
+	if status.Config == nil || status.Config.UploadConcurrency != 5 {
+		t.Errorf("status config = %+v, want upload_concurrency 5", status.Config)
+	}
+}
+
+func TestAPI_ConfigForm_PutInvalidRejected(t *testing.T) {
+	env := newTestSupervisor(t)
+	before, err := os.ReadFile(env.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := env.server(t)
+
+	var form struct {
+		Values config.FormValues `json:"values"`
+	}
+	getJSON(t, srv.URL+"/api/config/form", &form)
+	form.Values.WatchDirs = []string{"/nonexistent/cloud-sync-form-test"} // must fail the dir check
+
+	code := doJSON(t, http.MethodPut, srv.URL+"/api/config/form",
+		map[string]any{"values": form.Values}, nil)
+	if code != http.StatusBadRequest {
+		t.Fatalf("PUT invalid code = %d, want 400", code)
+	}
+	after, _ := os.ReadFile(env.cfgPath)
+	if !bytes.Equal(before, after) {
+		t.Errorf("config file changed after invalid form PUT")
+	}
+}
+
+func TestAPI_ConfigRegenerate(t *testing.T) {
+	env := newTestSupervisor(t)
+	srv := env.server(t)
+
+	var putResp configPutResponse
+	if code := doJSON(t, http.MethodPost, srv.URL+"/api/config/regenerate", nil, &putResp); code != http.StatusOK {
+		t.Fatalf("regenerate code = %d, want 200", code)
+	}
+	var cfgResp struct {
+		YAML string `json:"yaml"`
+	}
+	getJSON(t, srv.URL+"/api/config", &cfgResp)
+	if !strings.Contains(cfgResp.YAML, "#") {
+		t.Errorf("regenerated yaml has no comments:\n%s", cfgResp.YAML)
+	}
+	if !strings.Contains(cfgResp.YAML, "openlist_url") {
+		t.Errorf("regenerated yaml missing openlist_url:\n%s", cfgResp.YAML)
+	}
+}

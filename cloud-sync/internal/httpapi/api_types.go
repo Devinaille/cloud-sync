@@ -1,5 +1,7 @@
 package httpapi
 
+import "cloud-sync/internal/config"
+
 // statusResponse is the payload for GET /api/status.
 type statusResponse struct {
 	OK            bool         `json:"ok"`
@@ -64,6 +66,16 @@ type filesResponse struct {
 type configPutResponse struct {
 	OK     bool           `json:"ok"`
 	Status statusResponse `json:"status"`
+}
+
+// configFormResponse is the payload for GET /api/config/form. The token is
+// omitted from Values; TokenSet tells the UI whether one is configured.
+type configFormResponse struct {
+	Values           config.FormValues `json:"values"`
+	TokenSet         bool              `json:"token_set"`
+	ConfigPath       string            `json:"config_path"`
+	MinFileSizeBytes int64             `json:"min_file_size_bytes"`
+	RestartFields    []string          `json:"restart_fields"`
 }
 
 type retryRequest struct {

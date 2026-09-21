@@ -38,6 +38,8 @@ func (w *WebServer) Handler() http.Handler {
 	mux.HandleFunc("/api/status", w.handleStatus)
 	mux.HandleFunc("/api/files", w.handleFiles)
 	mux.HandleFunc("/api/config", w.handleConfig)
+	mux.HandleFunc("/api/config/form", w.handleConfigForm)
+	mux.HandleFunc("/api/config/regenerate", w.handleConfigRegenerate)
 	mux.HandleFunc("/api/retry", w.handleRetry)
 	mux.HandleFunc("/api/cleanup/run", w.handleCleanupRun)
 	mux.HandleFunc("/api/tasks", w.handleTasks)
