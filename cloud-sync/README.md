@@ -275,7 +275,7 @@ YAML 与 env 同名（小写 ↔ 大写）。下表是底层 env 名：
 | `OPENLIST_DST_STORAGE` | OpenList 139yun 存储**根**（`/139yun_media`；同上追加 `media/`） |
 | `OPENLIST_OVERWRITE` (默认 false) | false=目标已存在时 `skip_existing`（保留云端文件）；true=`overwrite`（覆盖） |
 | `UI_LISTEN` / `ui_listen` (默认 `:8099`) | Web UI + JSON API 监听地址；显式空字符串或 `-` 禁用 UI |
-| `TASKS_ENABLED` / `tasks_enabled` (默认 **false**) | 任务开关：false 时不监听/不上传/不清理；可在 Web UI 运行时启停 |
+| `TASKS_ENABLED` / `tasks_enabled` (默认 **false**) | 任务开关：false 时不监听/不上传/不清理；可在 Web UI 运行时启停。仅**进程启动时**读取，热重载不改变运行状态 |
 | `WATCH_DIRS` | 逗号分隔的**绝对**本地路径列表（fsnotify 递归监听每个） |
 | `SYNC_STATUS_DIR` (默认 `/config/.sync_status`) | `.sync_status/` 绝对路径；缺省时放挂载的 `/config` 下，启动时自动创建 |
 | `ALLOWED_SOURCE_PREFIXES` | 逗号分隔，cleanup 防御性白名单（必须包含每个 WATCH_DIR） |

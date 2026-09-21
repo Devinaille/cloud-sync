@@ -33,6 +33,8 @@ ui_listen: ":8099"
 # and trigger a single-file retry or an on-demand cleanup (they run one-off,
 # without starting the watcher). Enabling runs a startup scan and one cleanup
 # pass immediately.
+# Read only at process start: saving via the Web UI (hot reload) does NOT
+# start/pause tasks — use the Dashboard toggle for runtime control.
 tasks_enabled: false
 
 # Watched local directories. All paths must exist. fsnotify recurses into

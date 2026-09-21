@@ -70,12 +70,16 @@ type configPutResponse struct {
 
 // configFormResponse is the payload for GET /api/config/form. The token is
 // omitted from Values; TokenSet tells the UI whether one is configured.
+// TasksRunning/TasksEnabled are the current runtime state (independent of the
+// boot-time Values.TasksEnabled, which a hot reload does not apply).
 type configFormResponse struct {
 	Values           config.FormValues `json:"values"`
 	TokenSet         bool              `json:"token_set"`
 	ConfigPath       string            `json:"config_path"`
 	MinFileSizeBytes int64             `json:"min_file_size_bytes"`
 	RestartFields    []string          `json:"restart_fields"`
+	TasksRunning     bool              `json:"tasks_running"`
+	TasksEnabled     bool              `json:"tasks_enabled"`
 }
 
 type retryRequest struct {

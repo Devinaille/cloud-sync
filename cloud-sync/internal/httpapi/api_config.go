@@ -55,6 +55,8 @@ func (w *WebServer) handleConfigForm(rw http.ResponseWriter, r *http.Request) {
 			ConfigPath:       w.sup.ConfigPath(),
 			MinFileSizeBytes: cfg.MinFileSize,
 			RestartFields:    []string{"ui_listen"},
+			TasksRunning:     w.sup.TasksRunning(),
+			TasksEnabled:     w.sup.TasksEnabled(),
 		})
 	case http.MethodPut:
 		var body struct {

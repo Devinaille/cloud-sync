@@ -690,9 +690,14 @@ func TestAPI_ConfigForm_Get(t *testing.T) {
 		ConfigPath       string            `json:"config_path"`
 		MinFileSizeBytes int64             `json:"min_file_size_bytes"`
 		RestartFields    []string          `json:"restart_fields"`
+		TasksRunning     bool              `json:"tasks_running"`
+		TasksEnabled     bool              `json:"tasks_enabled"`
 	}
 	if code := getJSON(t, srv.URL+"/api/config/form", &body); code != http.StatusOK {
 		t.Fatalf("code = %d, want 200", code)
+	}
+	if !body.TasksEnabled || !body.TasksRunning {
+		t.Errorf("runtime tasks = enabled:%v running:%v, want both true (newTestSupervisor starts them)", body.TasksEnabled, body.TasksRunning)
 	}
 	if body.Values.OpenListURL == "" || len(body.Values.WatchDirs) == 0 {
 		t.Errorf("values incomplete: %+v", body.Values)

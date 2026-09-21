@@ -114,6 +114,7 @@
       "config.regenerateFailed": "Regenerate failed: {e}",
       "config.restart": "restart required",
       "config.minFileSize": "Min file size (read-only): {bytes}",
+      "config.tasksRuntime": "Runtime: {state}",
       "config.field.tokenPlaceholder": "leave blank to keep current",
       "config.group.openlist": "OpenList",
       "config.group.watch": "Watching & filtering",
@@ -133,7 +134,8 @@
       "config.field.allowed_source_prefixes": "Allowed source prefixes",
       "config.field.allowed_source_prefixes.help": "Cleanup only deletes under these prefixes.",
       "config.field.sync_status_dir": "Sync status dir",
-      "config.field.tasks_enabled": "Start tasks on boot",
+      "config.field.tasks_enabled": "Start tasks on boot (process start/restart only)",
+      "config.field.tasks_enabled.help": "Hot reload does not start or stop tasks; use the Dashboard to start/pause at runtime.",
       "config.field.upload_concurrency": "Upload concurrency",
       "config.field.stabilize_wait_seconds": "Stabilize wait (seconds)",
       "config.field.poll_interval_seconds": "Poll interval (seconds)",
@@ -260,6 +262,7 @@
       "config.regenerateFailed": "重新生成失败：{e}",
       "config.restart": "需重启",
       "config.minFileSize": "最小文件大小（只读）：{bytes}",
+      "config.tasksRuntime": "当前：{state}",
       "config.field.tokenPlaceholder": "留空表示不修改",
       "config.group.openlist": "OpenList",
       "config.group.watch": "监听与过滤",
@@ -279,7 +282,8 @@
       "config.field.allowed_source_prefixes": "允许清理的路径前缀",
       "config.field.allowed_source_prefixes.help": "清理只会删除这些前缀下的文件。",
       "config.field.sync_status_dir": "状态目录",
-      "config.field.tasks_enabled": "启动时开启任务",
+      "config.field.tasks_enabled": "启动时开启任务（仅进程启动/重启生效）",
+      "config.field.tasks_enabled.help": "保存并热重载不会启动/暂停任务；运行时请用 Dashboard 的「启动任务/暂停」。",
       "config.field.upload_concurrency": "上传并发",
       "config.field.stabilize_wait_seconds": "稳定等待（秒）",
       "config.field.poll_interval_seconds": "轮询间隔（秒）",
@@ -1271,6 +1275,15 @@
       root.appendChild(section);
     });
     if (meta) {
+      root.appendChild(
+        el(
+          "p",
+          "form-note",
+          t("config.tasksRuntime", {
+            state: meta.tasks_running ? t("tasks.running") : t("tasks.paused"),
+          })
+        )
+      );
       root.appendChild(
         el(
           "p",
