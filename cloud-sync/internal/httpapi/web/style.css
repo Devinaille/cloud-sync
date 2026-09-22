@@ -280,6 +280,10 @@ main {
   border-top-color: var(--accent, var(--blue));
 }
 
+.stat[data-state="processed"] {
+  border-top-color: var(--amber);
+}
+
 .stat-value {
   font-size: 1.9rem;
   font-weight: 700;

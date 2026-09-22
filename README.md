@@ -226,7 +226,7 @@ http://<host>:8099/
 
 三个 Tab：
 
-- **Dashboard**：同步计数（synced / failed / cleaned / unsynced）、OpenList 连通性、运行时长、watch 目录；「Run cleanup now」立即触发一次清理（遵循 `cleanup_dry_run`）。
+- **Dashboard**：同步计数（**已处理 processed** = synced + cleaned、synced、syncing、failed、cleaned、unsynced）、OpenList 连通性、运行时长、watch 目录；「Run cleanup now」立即触发一次清理（遵循 `cleanup_dry_run`）。
 - **Files**：按状态筛选 / 搜索 / 分页浏览文件；勾选行（或单行按钮）触发重试——重试会删掉该 key 的状态记录并重新入队，走既有上传状态机。
 - **Config**：默认**表单化**填写（OpenList / 监听过滤 / 任务上传 / 清理 / 日志界面分组），「保存并重载」会把表单值**就地合并**进配置文件（保留原有注释与顺序；`openlist_token` 留空表示不修改）。切到「**高级（YAML）**」可编辑原文并「Save & Reload」。另有「**重新生成 YAML**」按钮（需二次确认）按当前值重写为带注释的完整配置——会丢弃原文件注释。保存均原子写回并热重载（无需重启容器/进程）；高级页右侧只读展示 `/api/status` 里的生效配置。
 
@@ -262,7 +262,7 @@ http://<host>:8099/
             - { field: counts.failed,   label: 失败,   format: number }
 ```
 
-- 字段含义：`unsynced`=尚无状态的候选文件，`syncing`=正在上传，`synced`/`failed`/`cleaned`=已落盘记录（`failed` 会阻塞自动重传，需在 UI 手动重试）。
+- 字段含义：`unsynced`=尚无状态的候选文件，`syncing`=正在上传，`synced`/`failed`/`cleaned`=已落盘记录（`failed` 会阻塞自动重传，需在 UI 手动重试）。`processed`（已处理）= `synced + cleaned`，可替代上面任一项作为展示字段。
 - 想看其余状态（`counts.cleaned`）或附加项（`openlist_ping`、`tasks_running`、`uptime_seconds`、`version`）：再挂一个小部件指向同一 `url`（各取 4 个字段即可）。
 - `customapi` 不支持块高亮，`failed` 不会自动变红；需要"失败即红"可另配 Homepage 的 `ping` / `siteMonitor`。
 - 布尔值可直接 `format: text`，或用 `remap` 映射成中文（如 `openlist_ping` → 在线/离线）。

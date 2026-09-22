@@ -148,7 +148,7 @@ func TestAPI_Status_OK(t *testing.T) {
 	if !body.OK {
 		t.Errorf("ok = false, want true")
 	}
-	for _, k := range []string{"synced", "failed", "cleaned", "unsynced", "syncing"} {
+	for _, k := range []string{"synced", "failed", "cleaned", "unsynced", "syncing", "processed"} {
 		if _, ok := body.Counts[k]; !ok {
 			t.Errorf("counts missing %q", k)
 		}

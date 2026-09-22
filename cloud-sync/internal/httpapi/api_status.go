@@ -92,6 +92,9 @@ func statusPayload(ctx context.Context, sup *supervisor.Supervisor) statusRespon
 			resp.Counts.Cleaned++
 		}
 	}
+	// Processed = files that reached a successful terminal state (uploaded, or
+	// uploaded then cleaned up locally).
+	resp.Counts.Processed = resp.Counts.Synced + resp.Counts.Cleaned
 	un, err := unsyncedFiles(cfg, st)
 	if err != nil {
 		resp.OK = false

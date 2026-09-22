@@ -32,6 +32,8 @@
       "state.cleaned": "Cleaned",
       "state.unsynced": "Unsynced",
       "state.syncing": "Syncing",
+      "state.processed": "Processed",
+      "state.processed.tip": "Synced + cleaned",
       "state.unknown": "Unknown",
       "health.title": "Health",
       "health.openlist": "OpenList",
@@ -180,6 +182,8 @@
       "state.cleaned": "已清理",
       "state.unsynced": "未同步",
       "state.syncing": "上传中",
+      "state.processed": "已处理",
+      "state.processed.tip": "已同步 + 已清理",
       "state.unknown": "未知",
       "health.title": "运行状况",
       "health.openlist": "OpenList",
@@ -564,6 +568,11 @@
     setText("count-cleaned", counts.cleaned != null ? counts.cleaned : 0);
     setText("count-unsynced", counts.unsynced != null ? counts.unsynced : 0);
     setText("count-syncing", counts.syncing != null ? counts.syncing : 0);
+    setText("count-processed", counts.processed != null ? counts.processed : 0);
+    var processedCard = byId("card-processed");
+    if (processedCard) {
+      processedCard.title = t("state.processed.tip");
+    }
 
     var banner = byId("degraded-banner");
     if (st.ok) {

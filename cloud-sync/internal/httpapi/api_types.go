@@ -20,11 +20,12 @@ type statusResponse struct {
 }
 
 type statusCounts struct {
-	Synced   int `json:"synced"`
-	Failed   int `json:"failed"`
-	Cleaned  int `json:"cleaned"`
-	Unsynced int `json:"unsynced"`
-	Syncing  int `json:"syncing"`
+	Synced    int `json:"synced"`
+	Failed    int `json:"failed"`
+	Cleaned   int `json:"cleaned"`
+	Unsynced  int `json:"unsynced"`
+	Syncing   int `json:"syncing"`
+	Processed int `json:"processed"`
 }
 
 // configView is the effective config exposed by the API. openlist_token is
