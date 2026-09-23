@@ -24,6 +24,7 @@ type Config struct {
 	StabilizeWait     time.Duration
 	PollInterval      time.Duration
 	TaskTimeout       time.Duration
+	CleanupInterval   time.Duration
 	MinFileSize       int64
 	AllowedPrefixes   []string
 	LogLevel          string
@@ -52,17 +53,18 @@ type fileConfig struct {
 	// "user omitted the field". Without this, omitting the key would silently
 	// overwrite a CLEANUP_DRY_RUN env value with "false" — violating the
 	// documented "missing keys fall back to env" contract.
-	CleanupDryRun         *bool    `yaml:"cleanup_dry_run"`
-	OpenListOverwrite     *bool    `yaml:"openlist_overwrite"`
-	UploadConcurrency     int      `yaml:"upload_concurrency"`
-	StabilizeWaitSeconds  int      `yaml:"stabilize_wait_seconds"`
-	PollIntervalSeconds   int      `yaml:"poll_interval_seconds"`
-	TaskTimeoutSeconds    int      `yaml:"task_timeout_seconds"`
-	AllowedSourcePrefixes []string `yaml:"allowed_source_prefixes"`
-	LogLevel              string   `yaml:"log_level"`
-	LogFile               string   `yaml:"log_file"`
-	UIListen              *string  `yaml:"ui_listen"`
-	TasksEnabled          *bool    `yaml:"tasks_enabled"`
+	CleanupDryRun          *bool    `yaml:"cleanup_dry_run"`
+	OpenListOverwrite      *bool    `yaml:"openlist_overwrite"`
+	UploadConcurrency      int      `yaml:"upload_concurrency"`
+	StabilizeWaitSeconds   int      `yaml:"stabilize_wait_seconds"`
+	PollIntervalSeconds    int      `yaml:"poll_interval_seconds"`
+	TaskTimeoutSeconds     int      `yaml:"task_timeout_seconds"`
+	CleanupIntervalSeconds int      `yaml:"cleanup_interval_seconds"`
+	AllowedSourcePrefixes  []string `yaml:"allowed_source_prefixes"`
+	LogLevel               string   `yaml:"log_level"`
+	LogFile                string   `yaml:"log_file"`
+	UIListen               *string  `yaml:"ui_listen"`
+	TasksEnabled           *bool    `yaml:"tasks_enabled"`
 }
 
 // Load builds a Config from an optional YAML file plus process environment.
@@ -125,6 +127,9 @@ func loadWithFile(path string) (*Config, error) {
 	}
 	if f.TaskTimeoutSeconds != 0 {
 		os.Setenv("TASK_TIMEOUT_SECONDS", strconv.Itoa(f.TaskTimeoutSeconds))
+	}
+	if f.CleanupIntervalSeconds != 0 {
+		os.Setenv("CLEANUP_INTERVAL_SECONDS", strconv.Itoa(f.CleanupIntervalSeconds))
 	}
 	if f.LogLevel != "" {
 		os.Setenv("LOG_LEVEL", f.LogLevel)
@@ -243,6 +248,9 @@ func loadFromEnv() (*Config, error) {
 	if cfg.TaskTimeout, err = secondsDuration("TASK_TIMEOUT_SECONDS"); err != nil {
 		return nil, err
 	}
+	if cfg.CleanupInterval, err = cleanupInterval("CLEANUP_INTERVAL_SECONDS"); err != nil {
+		return nil, err
+	}
 
 	if cfg.CleanupDryRun, err = envBool("CLEANUP_DRY_RUN", false); err != nil {
 		return nil, err
@@ -284,6 +292,28 @@ func secondsDuration(env string) (time.Duration, error) {
 		return 0, fmt.Errorf("config: %s must be positive int, got %q", env, v)
 	}
 	return time.Duration(n) * time.Second, nil
+}
+
+// minCleanupInterval is the floor for CLEANUP_INTERVAL_SECONDS: too-frequent
+// ticks would re-walk the whole state directory.
+const minCleanupInterval = 300 * time.Second
+
+// cleanupInterval reads env seconds, defaulting to one hour when unset, and
+// rejects values below the floor.
+func cleanupInterval(env string) (time.Duration, error) {
+	v := os.Getenv(env)
+	if v == "" {
+		return time.Hour, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return 0, fmt.Errorf("config: %s must be a positive int, got %q", env, v)
+	}
+	d := time.Duration(n) * time.Second
+	if d < minCleanupInterval {
+		return 0, fmt.Errorf("config: %s must be >= %d seconds, got %d", env, int(minCleanupInterval/time.Second), n)
+	}
+	return d, nil
 }
 
 func positiveInt(env string) (int, error) {

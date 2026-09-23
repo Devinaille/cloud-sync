@@ -556,3 +556,31 @@ func TestLoad_MissingWatchDirStillRejected(t *testing.T) {
 		t.Fatal("Load() expected error for a nonexistent WATCH_DIRS entry")
 	}
 }
+
+func TestCleanupInterval(t *testing.T) {
+	cases := []struct {
+		in      string
+		want    time.Duration
+		wantErr bool
+	}{
+		{"", time.Hour, false},
+		{"3600", time.Hour, false},
+		{"300", 300 * time.Second, false},
+		{"299", 0, true},
+		{"0", 0, true},
+		{"abc", 0, true},
+	}
+	for _, tc := range cases {
+		t.Setenv("CLEANUP_INTERVAL_SECONDS", tc.in)
+		got, err := cleanupInterval("CLEANUP_INTERVAL_SECONDS")
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("in=%q: expected error, got %v", tc.in, got)
+			}
+			continue
+		}
+		if err != nil || got != tc.want {
+			t.Errorf("in=%q: got %v err %v, want %v", tc.in, got, err, tc.want)
+		}
+	}
+}

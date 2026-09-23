@@ -61,6 +61,10 @@ allowed_source_prefixes:
 # "[DRY-RUN] would delete" entries to confirm the paths before flipping.
 cleanup_after_hours: 72
 cleanup_dry_run:     true
+# Cleanup tick interval (seconds). Default 3600, minimum 300.
+# Due time is computed live as synced_at + cleanup_after_hours, so changing
+# cleanup_after_hours affects already-synced files at the next tick.
+cleanup_interval_seconds: 3600
 
 # Upload pipeline.
 upload_concurrency:        2
