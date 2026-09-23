@@ -494,8 +494,11 @@ for record in scan(.sync_status/<today_minus_3d>):
 
 - **白名单路径**：只删 `/mnt/basic/media/media/` 和 `/mnt/basic/media/ani-rss/` 下的文件
 - **状态驱动**：仅在 `.sync_status` 中 `status == 'synced'`（即 OpenList API 报告成功）的记录才进入清理
+- **到期实时计算**：`now - synced_at >= CLEANUP_AFTER_HOURS`（改配置对已同步文件实时生效；持久化的 `cleanup_at` 只是同步时快照，不参与判定）
+- **间隔可配**：`CLEANUP_INTERVAL_SECONDS`（默认 3600，最小 300）
 - **dry-run 模式**：上线前先跑 24h dry-run 日志
 - **删除限制**：单次最多清理 50 个文件，避免误删风暴
+- **手动清理**：Web UI 文件明细每行「清理」按钮（仅 `synced`，遵守 dry-run）
 - **告警**：每次清理动作都写日志，异常立即推送
 
 ---

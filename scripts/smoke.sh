@@ -142,9 +142,9 @@ done
 }
 
 echo "--- cleanup dry-run line ---"
-# Rewrite the synced record's cleanup_at to the past, then bounce cloud-sync
-# so the startup cleanup tick picks it up (hourly ticker would take too long
-# for a smoke test).
+# Rewrite the synced record's synced_at to the past, then bounce cloud-sync
+# so the startup cleanup tick picks it up (due = synced_at + CLEANUP_AFTER_HOURS;
+# the hourly ticker would take too long for a smoke test).
 STATE=$(find "$WS/.sync_status" -name 'SmokeTest.mkv.json' | head -1)
 kill "$CS_PID" 2>/dev/null || true
 wait "$CS_PID" 2>/dev/null || true
@@ -152,7 +152,7 @@ python3 -c "
 import json, datetime, pathlib
 p = pathlib.Path('$STATE')
 rec = json.loads(p.read_text())
-rec['cleanup_at'] = '2020-01-01T00:00:00Z'
+rec['synced_at'] = '2020-01-01T00:00:00Z'
 p.write_text(json.dumps(rec, indent=2))
 "
 

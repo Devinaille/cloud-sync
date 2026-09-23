@@ -227,7 +227,7 @@ http://<host>:8099/
 三个 Tab：
 
 - **Dashboard**：同步计数（**已处理 processed** = synced + cleaned、synced、syncing、failed、cleaned、unsynced）、OpenList 连通性、运行时长、watch 目录；「Run cleanup now」立即触发一次清理（遵循 `cleanup_dry_run`）。
-- **Files**：按状态筛选 / 搜索 / 分页浏览文件；勾选行（或单行按钮）触发重试——重试会删掉该 key 的状态记录并重新入队，走既有上传状态机。
+- **Files**：按状态筛选 / 搜索 / 分页浏览文件；勾选行（或单行按钮）触发重试——重试会删掉该 key 的状态记录并重新入队，走既有上传状态机。每行「清理」按钮可手动清理该文件的本地源（仅 `synced` 可用，遵守 `cleanup_dry_run`；到期时间按 `synced_at + cleanup_after_hours` 实时计算）。
 - **Config**：默认**表单化**填写（OpenList / 监听过滤 / 任务上传 / 清理 / 日志界面分组），「保存并重载」会把表单值**就地合并**进配置文件（保留原有注释与顺序；`openlist_token` 留空表示不修改）。切到「**高级（YAML）**」可编辑原文并「Save & Reload」。另有「**重新生成 YAML**」按钮（需二次确认）按当前值重写为带注释的完整配置——会丢弃原文件注释。保存均原子写回并热重载（无需重启容器/进程）；高级页右侧只读展示 `/api/status` 里的生效配置。
 
 界面支持**中英文切换**：右上角 `EN / 中文`。默认跟随浏览器语言，选择保存在浏览器 `localStorage`。

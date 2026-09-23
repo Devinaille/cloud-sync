@@ -279,8 +279,9 @@ YAML 与 env 同名（小写 ↔ 大写）。下表是底层 env 名：
 | `WATCH_DIRS` | 逗号分隔的**绝对**本地路径列表（fsnotify 递归监听每个） |
 | `SYNC_STATUS_DIR` (默认 `/config/.sync_status`) | `.sync_status/` 绝对路径；缺省时放挂载的 `/config` 下，启动时自动创建 |
 | `ALLOWED_SOURCE_PREFIXES` | 逗号分隔，cleanup 防御性白名单（必须包含每个 WATCH_DIR） |
-| `CLEANUP_AFTER_HOURS` | 清理延迟（小时） |
+| `CLEANUP_AFTER_HOURS` | 清理延迟（小时）；到期 = `synced_at + 当前值`，改小/改大对已同步文件实时生效 |
 | `CLEANUP_DRY_RUN` | true=只打日志不删，false=真删（代码默认 false） |
+| `CLEANUP_INTERVAL_SECONDS` | 清理 tick 间隔（秒），默认 3600，最小 300 |
 | `UPLOAD_CONCURRENCY` | 上传并发上限 |
 | `STABILIZE_WAIT_SECONDS` | 等文件 size+mtime 稳定多久才上传 |
 | `POLL_INTERVAL_SECONDS` | OpenList 任务状态轮询间隔 |
@@ -288,7 +289,7 @@ YAML 与 env 同名（小写 ↔ 大写）。下表是底层 env 名：
 | `LOG_LEVEL` (debug/info/warn/error) | 日志等级 |
 | `LOG_FILE` (空=stdout) | 日志文件路径；空表示 stdout（由 docker compose 收集） |
 
-> **默认值说明**：除 `CLEANUP_DRY_RUN`（代码默认 false）、`LOG_FILE`（可选）和 `UI_LISTEN`（代码默认 `:8099`）外，上表数值项**没有代码默认值**——YAML/env 都没设会启动报错。`config.example.yaml` 给出的 72 / 2 / 30 / 3 / 1800 只是推荐示例。
+> **默认值说明**：除 `CLEANUP_DRY_RUN`（代码默认 false）、`LOG_FILE`（可选）、`UI_LISTEN`（代码默认 `:8099`）和 `CLEANUP_INTERVAL_SECONDS`（默认 3600，最小 300）外，上表数值项**没有代码默认值**——YAML/env 都没设会启动报错。`config.example.yaml` 给出的 72 / 2 / 30 / 3 / 1800 只是推荐示例。
 
 **未通过 env / config 暴露**：`MinFileSize` 硬编码 100 MB（编译时常量）。要调，改源码 `cloud-sync/internal/config/config.go:MinFileSizeBytes` 后重 build。
 
@@ -317,7 +318,7 @@ YAML 与 env 同名（小写 ↔ 大写）。下表是底层 env 名：
 | 文件落地但 cloud 没副本 | mock 没启或 `OPENLIST_LOCAL_SRC_DIR` / `OPENLIST_LOCAL_DST_DIR` 不对。看 mock stdout。 |
 | 完全没反应 | 文件 < 100 MB（MinFileSize 是硬编码）。`ls -lh` 看一下。 |
 | `.sync_status` 不出现 | watch 路径不在 `WATCH_DIRS` 内，或 `ALLOWED_SOURCE_PREFIXES` 把它挡掉了。`LOG_LEVEL=debug` 看 `pipeline: path not whitelisted` / `too small`。 |
-| cleanup 没日志 | `CLEANUP_DRY_RUN` 默认 false 时真删，但只在 `CleanupAt < now` 才动。改 `cleanup_at` 过去时间或调小 `CLEANUP_AFTER_HOURS`。 |
+| cleanup 没日志 | `CLEANUP_DRY_RUN` 默认 false 时真删，但只在 `synced_at + CLEANUP_AFTER_HOURS <= now` 才动（实时计算；调小延迟会让已有文件在下一个 tick 到期）。 |
 | 重传同一个文件，云端内容没变 | 默认 `OPENLIST_OVERWRITE=false` → `skip_existing=true`，目标已存在就跳过。要覆盖：把配置文件的 `openlist_overwrite` 改为 `true`（或删掉该 key 再用 env `OPENLIST_OVERWRITE=true`——**文件值优先于 env**）。 |
 | `code=403 msg=file [X] exists` | 客户端同时发了 `overwrite=false` + `skip_existing=false`（不该发生；检查配置）。 |
 | 文件改了但容器还是旧值 | 配置文件是挂载的（`:rw`），改完主机文件后 `docker compose restart cloud-sync`，不是 `up`（或用 Web UI 的 Save & Reload 热重载）。 |

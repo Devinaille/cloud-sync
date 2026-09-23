@@ -145,7 +145,7 @@ python3 -c "
 import json, pathlib
 p = pathlib.Path('$STATE')
 rec = json.loads(p.read_text())
-rec['cleanup_at'] = '2020-01-01T00:00:00Z'
+rec['synced_at'] = '2020-01-01T00:00:00Z'
 p.write_text(json.dumps(rec, indent=2))
 "
 
