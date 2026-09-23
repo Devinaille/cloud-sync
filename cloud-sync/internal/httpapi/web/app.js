@@ -51,6 +51,11 @@
       "maint.run": "Run cleanup now",
       "maint.done": "Cleanup processed {n} item(s).",
       "maint.failed": "Cleanup failed: {e}",
+      "maint.rescan": "Rescan state",
+      "maint.rescanNote": "Restores \"cleaned\" records whose local file is still present.",
+      "maint.rescanDone": "Rescan: {restored} restored, {changed} changed, {scanned} scanned.",
+      "maint.rescanNone": "Rescan: nothing to restore.",
+      "maint.rescanFailed": "Rescan failed: {e}",
       "tasks.title": "Tasks",
       "tasks.running": "Running",
       "tasks.paused": "Paused",
@@ -208,6 +213,11 @@
       "maint.run": "立即清理",
       "maint.done": "清理处理了 {n} 项。",
       "maint.failed": "清理失败：{e}",
+      "maint.rescan": "重新扫描",
+      "maint.rescanNote": "把“已清理但本地文件仍在”的记录恢复为已同步。",
+      "maint.rescanDone": "重扫：恢复 {restored}，内容已变 {changed}，扫描 {scanned}。",
+      "maint.rescanNone": "重扫：无需恢复。",
+      "maint.rescanFailed": "重扫失败：{e}",
       "tasks.title": "任务",
       "tasks.running": "运行中",
       "tasks.paused": "已暂停",
@@ -748,6 +758,35 @@
       await loadStatus();
     } catch (e) {
       toast(t("maint.failed", { e: e.message }), "error");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+      }
+    }
+  }
+
+  async function runRescan() {
+    var btn = byId("rescan-btn");
+    if (btn) {
+      btn.disabled = true;
+    }
+    try {
+      var data = await postJSON("/api/rescan", {});
+      var restored = data && data.restored != null ? data.restored : 0;
+      var changed = data && data.skipped_changed != null ? data.skipped_changed : 0;
+      var scanned = data && data.scanned != null ? data.scanned : 0;
+      if (restored > 0) {
+        toast(
+          t("maint.rescanDone", { restored: restored, changed: changed, scanned: scanned }),
+          "success"
+        );
+      } else {
+        toast(t("maint.rescanNone"), "info");
+      }
+      await loadStatus();
+      await loadFiles();
+    } catch (e) {
+      toast(t("maint.rescanFailed", { e: e.message }), "error");
     } finally {
       if (btn) {
         btn.disabled = false;
@@ -1614,6 +1653,11 @@
     var cleanupBtn = byId("cleanup-btn");
     if (cleanupBtn) {
       cleanupBtn.addEventListener("click", runCleanup);
+    }
+
+    var rescanBtn = byId("rescan-btn");
+    if (rescanBtn) {
+      rescanBtn.addEventListener("click", runRescan);
     }
 
     var tasksBtn = byId("tasks-toggle");
