@@ -37,6 +37,7 @@ func TestConfig(t *testing.T) *config.Config {
 		CleanupAfter: 72 * time.Hour, UploadConcurrency: 2,
 		StabilizeWait: 50 * time.Millisecond, PollInterval: 10 * time.Millisecond,
 		TaskTimeout: 5 * time.Second, MinFileSize: 1024,
+		CleanupInterval: time.Hour,
 		AllowedPrefixes: []string{watch}, LogLevel: "info",
 		TasksEnabled: true,
 	}

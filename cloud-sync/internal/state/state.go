@@ -149,7 +149,7 @@ func (s *StateManager) atomicWrite(p string, rec *StatusRecord) error {
 // returns records where Status == "synced" and CleanupAt < now. Each returned
 // record's Key is set to its path relative to the date bucket, so Update
 // rewrites the same file in place.
-func (s *StateManager) ListForCleanup(now time.Time) ([]*StatusRecord, error) {
+func (s *StateManager) ListForCleanup(now time.Time, after time.Duration) ([]*StatusRecord, error) {
 	var out []*StatusRecord
 	entries, err := os.ReadDir(s.root)
 	if err != nil {
@@ -180,7 +180,7 @@ func (s *StateManager) ListForCleanup(now time.Time) ([]*StatusRecord, error) {
 				s.log.Warn("state: parse failed", "path", p, "err", err)
 				return nil
 			}
-			if rec.Status == "synced" && rec.CleanupAt.Before(now) {
+			if rec.Status == "synced" && !rec.SyncedAt.IsZero() && !now.Before(rec.SyncedAt.Add(after)) {
 				rel, err := filepath.Rel(base, p)
 				if err != nil {
 					s.log.Warn("state: rel path failed", "path", p, "err", err)
@@ -196,6 +196,45 @@ func (s *StateManager) ListForCleanup(now time.Time) ([]*StatusRecord, error) {
 		}
 	}
 	return out, nil
+}
+
+// Get returns the record for key, or (nil, nil) when none exists. It scans the
+// date buckets and FAILED/<date>/.
+func (s *StateManager) Get(key string) (*StatusRecord, error) {
+	target := filepath.FromSlash(filepath.ToSlash(key) + ".json")
+	var dirs []string
+	entries, err := os.ReadDir(s.root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	for _, e := range entries {
+		if e.IsDir() && looksLikeDate(e.Name()) {
+			dirs = append(dirs, filepath.Join(s.root, e.Name()))
+		}
+	}
+	if fEntries, err := os.ReadDir(filepath.Join(s.root, "FAILED")); err == nil {
+		for _, e := range fEntries {
+			if e.IsDir() {
+				dirs = append(dirs, filepath.Join(s.root, "FAILED", e.Name()))
+			}
+		}
+	}
+	for _, d := range dirs {
+		b, err := os.ReadFile(filepath.Join(d, target))
+		if err != nil {
+			continue
+		}
+		var rec StatusRecord
+		if err := json.Unmarshal(b, &rec); err != nil {
+			return nil, err
+		}
+		rec.Key = key
+		return &rec, nil
+	}
+	return nil, nil
 }
 
 // ListAll returns every record across all date buckets and FAILED/<date>/.

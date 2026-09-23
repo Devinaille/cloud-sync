@@ -149,3 +149,70 @@ func TestCleanup_WhitelistProtection(t *testing.T) {
 		t.Errorf("file outside whitelist was deleted: %v", err)
 	}
 }
+
+func TestCleanup_CleanKeyDeletesAndMarks(t *testing.T) {
+	cl, st, mediaDir := newTestCleanup(t, false)
+	src := filepath.Join(mediaDir, "Movies", "Clean.mkv")
+	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, make([]byte, 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write(&state.StatusRecord{
+		Key: "Movies/Clean.mkv", SrcPath: src, SyncedAt: time.Now().UTC(), Status: "synced",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	dry, err := cl.CleanKey(context.Background(), "Movies/Clean.mkv")
+	if err != nil || dry {
+		t.Fatalf("CleanKey: dry=%v err=%v", dry, err)
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Errorf("source file still exists")
+	}
+	rec, err := st.Get("Movies/Clean.mkv")
+	if err != nil || rec == nil || rec.Status != "cleaned" {
+		t.Fatalf("record = %+v err=%v, want status cleaned", rec, err)
+	}
+}
+
+func TestCleanup_CleanKeyDryRun(t *testing.T) {
+	cl, st, mediaDir := newTestCleanup(t, true)
+	src := filepath.Join(mediaDir, "Dry.mkv")
+	if err := os.WriteFile(src, make([]byte, 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write(&state.StatusRecord{
+		Key: "Dry.mkv", SrcPath: src, SyncedAt: time.Now().UTC(), Status: "synced",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dry, err := cl.CleanKey(context.Background(), "Dry.mkv")
+	if err != nil || !dry {
+		t.Fatalf("CleanKey: dry=%v err=%v, want dry=true", dry, err)
+	}
+	if _, err := os.Stat(src); err != nil {
+		t.Errorf("dry-run deleted the file: %v", err)
+	}
+	if rec, _ := st.Get("Dry.mkv"); rec == nil || rec.Status != "synced" {
+		t.Errorf("dry-run must not change status: %+v", rec)
+	}
+}
+
+func TestCleanup_CleanKeyRejectsNonSynced(t *testing.T) {
+	cl, st, mediaDir := newTestCleanup(t, false)
+	if err := st.Write(&state.StatusRecord{
+		Key: "F.mkv", SrcPath: filepath.Join(mediaDir, "F.mkv"),
+		SyncedAt: time.Now().UTC(), Status: "failed",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cl.CleanKey(context.Background(), "F.mkv"); err == nil {
+		t.Error("CleanKey(failed) = nil, want error")
+	}
+	if _, err := cl.CleanKey(context.Background(), "missing.mkv"); err == nil {
+		t.Error("CleanKey(missing) = nil, want error")
+	}
+}

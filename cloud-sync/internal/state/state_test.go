@@ -105,16 +105,16 @@ func TestState_ListForCleanup_FiltersByStatusAndTime(t *testing.T) {
 	st := newTestState(t)
 	_ = st.EnsureDirs()
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	past := &StatusRecord{Key: "old.mkv", SrcPath: "/x/old.mkv", SyncedAt: base, CleanupAt: base.Add(time.Hour), Status: "synced"}
-	future := &StatusRecord{Key: "new.mkv", SrcPath: "/x/new.mkv", SyncedAt: base, CleanupAt: base.Add(100 * time.Hour), Status: "synced"}
-	failed := &StatusRecord{Key: "fail.mkv", SrcPath: "/x/fail.mkv", SyncedAt: base, CleanupAt: base.Add(time.Hour), Status: "failed"}
+	past := &StatusRecord{Key: "old.mkv", SrcPath: "/x/old.mkv", SyncedAt: base, Status: "synced"}
+	future := &StatusRecord{Key: "new.mkv", SrcPath: "/x/new.mkv", SyncedAt: base.Add(48 * time.Hour), Status: "synced"}
+	failed := &StatusRecord{Key: "fail.mkv", SrcPath: "/x/fail.mkv", SyncedAt: base, Status: "failed"}
 	for _, r := range []*StatusRecord{past, future, failed} {
 		if err := st.Write(r); err != nil {
 			t.Fatalf("Write %s: %v", r.Key, err)
 		}
 	}
 	now := base.Add(48 * time.Hour)
-	got, err := st.ListForCleanup(now)
+	got, err := st.ListForCleanup(now, time.Hour)
 	if err != nil {
 		t.Fatalf("ListForCleanup: %v", err)
 	}
@@ -161,13 +161,13 @@ func TestState_ListForCleanup_NestedKeyUpdatedInPlace(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	rec := &StatusRecord{
 		Key: "Movies/X/X.mkv", SrcPath: "/x/Movies/X/X.mkv", SyncedAt: base,
-		CleanupAt: base.Add(time.Hour), Status: "synced",
+		Status: "synced",
 	}
 	if err := st.Write(rec); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	now := base.Add(48 * time.Hour)
-	got, err := st.ListForCleanup(now)
+	got, err := st.ListForCleanup(now, time.Hour)
 	if err != nil {
 		t.Fatalf("ListForCleanup: %v", err)
 	}
@@ -303,5 +303,49 @@ func TestState_Delete_RejectsTraversal(t *testing.T) {
 	}
 	if _, err := os.Stat(decoy); err != nil {
 		t.Errorf("decoy removed by traversal Delete: %v", err)
+	}
+}
+
+func TestState_ListForCleanup_LiveDelay(t *testing.T) {
+	st := newTestState(t)
+	now := time.Now().UTC()
+	if err := st.Write(&StatusRecord{
+		Key: "A.mkv", SrcPath: "/x/A.mkv", SyncedAt: now.Add(-2 * time.Hour), Status: "synced",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.ListForCleanup(now, time.Hour)
+	if err != nil {
+		t.Fatalf("ListForCleanup: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("after 1h: got %d records, want 1", len(got))
+	}
+	got, err = st.ListForCleanup(now, 3*time.Hour)
+	if err != nil {
+		t.Fatalf("ListForCleanup: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("after 3h: got %d records, want 0", len(got))
+	}
+}
+
+func TestState_Get(t *testing.T) {
+	st := newTestState(t)
+	if err := st.Write(&StatusRecord{
+		Key: "Movies/X.mkv", SrcPath: "/x/Movies/X.mkv", SyncedAt: time.Now().UTC(), Status: "synced",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.Get("Movies/X.mkv")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got == nil || got.SrcPath != "/x/Movies/X.mkv" || got.Key != "Movies/X.mkv" {
+		t.Fatalf("Get = %+v, want SrcPath /x/Movies/X.mkv and Key set", got)
+	}
+	missing, err := st.Get("nope.mkv")
+	if err != nil || missing != nil {
+		t.Fatalf("Get(missing) = (%v, %v), want (nil, nil)", missing, err)
 	}
 }
