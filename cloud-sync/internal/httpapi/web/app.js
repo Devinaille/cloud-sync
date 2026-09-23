@@ -86,6 +86,11 @@
       "files.retrySummary": "Retry: {ok} queued, {fail} failed.",
       "files.retryNone": "No matching files to retry.",
       "files.loadFailed": "Failed to load files: {e}",
+      "files.cleanup": "Cleanup",
+      "files.cleanupConfirm": "Delete the local file for {key}?",
+      "files.cleanupDone": "Cleaned: {key}",
+      "files.cleanupDryRun": "Dry-run: not deleted ({key})",
+      "files.cleanupFailed": "Cleanup failed: {key} \u2014 {e}",
       "th.path": "Path",
       "th.size": "Size",
       "th.state": "State",
@@ -145,6 +150,8 @@
       "config.field.cleanup_after_hours": "Cleanup after (hours)",
       "config.field.cleanup_dry_run": "Cleanup dry run",
       "config.field.cleanup_dry_run.help": "On: only log what would be deleted.",
+      "config.field.cleanup_interval_seconds": "Cleanup interval (seconds)",
+      "config.field.cleanup_interval_seconds.help": "Default 3600; minimum 300.",
       "config.field.log_level": "Log level",
       "config.field.log_file": "Log file",
       "config.field.log_file.help": "Empty = stdout.",
@@ -236,6 +243,11 @@
       "files.retrySummary": "重试：{ok} 个已入队，{fail} 个失败。",
       "files.retryNone": "没有可重试的文件。",
       "files.loadFailed": "加载文件失败：{e}",
+      "files.cleanup": "清理",
+      "files.cleanupConfirm": "删除 {key} 的本地文件？",
+      "files.cleanupDone": "已清理：{key}",
+      "files.cleanupDryRun": "演练：未删除（{key}）",
+      "files.cleanupFailed": "清理失败：{key} \u2014 {e}",
       "th.path": "路径",
       "th.size": "大小",
       "th.state": "状态",
@@ -295,6 +307,8 @@
       "config.field.cleanup_after_hours": "上传后清理（小时）",
       "config.field.cleanup_dry_run": "清理演练",
       "config.field.cleanup_dry_run.help": "开启时只记录将删除哪些文件。",
+      "config.field.cleanup_interval_seconds": "清理间隔（秒）",
+      "config.field.cleanup_interval_seconds.help": "默认 3600，最小 300。",
       "config.field.log_level": "日志级别",
       "config.field.log_file": "日志文件",
       "config.field.log_file.help": "留空 = 输出到 stdout。",
@@ -920,6 +934,17 @@
     tr.appendChild(errCell);
 
     var actionCell = el("td", "col-action");
+    var clean = el("button", "btn small", t("files.cleanup"));
+    clean.type = "button";
+    clean.disabled = item.state !== "synced";
+    clean.addEventListener("click", function () {
+      if (!window.confirm(t("files.cleanupConfirm", { key: item.key }))) {
+        return;
+      }
+      cleanFile(item.key);
+    });
+    actionCell.appendChild(clean);
+
     var retry = el("button", "btn small", t("files.retry"));
     retry.type = "button";
     retry.addEventListener("click", function () {
@@ -1073,6 +1098,21 @@
     }
   }
 
+  async function cleanFile(key) {
+    try {
+      var data = await postJSON("/api/cleanup/file", { key: key });
+      if (data && data.dry_run) {
+        toast(t("files.cleanupDryRun", { key: key }), "info");
+      } else {
+        toast(t("files.cleanupDone", { key: key }), "success");
+      }
+      await loadFiles();
+      loadStatus();
+    } catch (e) {
+      toast(t("files.cleanupFailed", { key: key, e: e.message }), "error");
+    }
+  }
+
   function retryKeys(keys) {
     keys = (keys || []).filter(Boolean);
     if (!keys.length) {
@@ -1182,6 +1222,7 @@
     { group: "config.group.cleanup", fields: [
       { key: "cleanup_after_hours", type: "number", min: 1 },
       { key: "cleanup_dry_run", type: "bool" },
+      { key: "cleanup_interval_seconds", type: "number", min: 300 },
     ] },
     { group: "config.group.logging", fields: [
       { key: "log_level", type: "select", options: ["debug", "info", "warn", "error"] },
