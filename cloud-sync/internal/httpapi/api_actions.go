@@ -141,3 +141,33 @@ func (w *WebServer) handleTasks(rw http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(rw, http.StatusOK, statusPayload(r.Context(), w.sup))
 }
+
+// handleCleanupFile cleans a single synced file on demand (honors dry-run).
+func (w *WebServer) handleCleanupFile(rw http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(rw, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req struct {
+		Key string `json:"key"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeError(rw, http.StatusBadRequest, fmt.Sprintf("invalid body: %v", err))
+		return
+	}
+	if req.Key == "" {
+		writeError(rw, http.StatusBadRequest, "key is empty")
+		return
+	}
+	cl := w.sup.Cleanup()
+	if cl == nil {
+		writeError(rw, http.StatusServiceUnavailable, "supervisor not running")
+		return
+	}
+	dryRun, err := cl.CleanKey(r.Context(), req.Key)
+	if err != nil {
+		writeError(rw, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(rw, http.StatusOK, map[string]any{"ok": true, "dry_run": dryRun})
+}

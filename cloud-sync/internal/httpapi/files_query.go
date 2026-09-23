@@ -31,7 +31,7 @@ func buildFileItems(cfg *config.Config, st *state.StateManager, records []*state
 	items := make([]fileItem, 0, len(records))
 	seen := make(map[string]struct{}, len(records))
 	for _, rec := range records {
-		items = append(items, recordToItem(rec))
+		items = append(items, recordToItem(rec, cfg.CleanupAfter))
 		seen[rec.Key] = struct{}{}
 	}
 	un, err := unsyncedFiles(cfg, st)
@@ -42,12 +42,12 @@ func buildFileItems(cfg *config.Config, st *state.StateManager, records []*state
 		if _, dup := seen[rec.Key]; dup {
 			continue
 		}
-		items = append(items, recordToItem(rec))
+		items = append(items, recordToItem(rec, cfg.CleanupAfter))
 	}
 	return items, nil
 }
 
-func recordToItem(rec *state.StatusRecord) fileItem {
+func recordToItem(rec *state.StatusRecord, cleanupAfter time.Duration) fileItem {
 	item := fileItem{
 		Key:        rec.Key,
 		SrcPath:    rec.SrcPath,
@@ -57,11 +57,13 @@ func recordToItem(rec *state.StatusRecord) fileItem {
 		RetryCount: rec.RetryCount,
 		Error:      rec.Error,
 	}
+	if rec.Status == "synced" && !rec.SyncedAt.IsZero() {
+		item.CleanupAt = rec.SyncedAt.Add(cleanupAfter).UTC().Format(time.RFC3339)
+	} else if !rec.CleanupAt.IsZero() {
+		item.CleanupAt = rec.CleanupAt.UTC().Format(time.RFC3339)
+	}
 	if !rec.SyncedAt.IsZero() {
 		item.SyncedAt = rec.SyncedAt.UTC().Format(time.RFC3339)
-	}
-	if !rec.CleanupAt.IsZero() {
-		item.CleanupAt = rec.CleanupAt.UTC().Format(time.RFC3339)
 	}
 	return item
 }

@@ -42,6 +42,7 @@ func (w *WebServer) Handler() http.Handler {
 	mux.HandleFunc("/api/config/regenerate", w.handleConfigRegenerate)
 	mux.HandleFunc("/api/retry", w.handleRetry)
 	mux.HandleFunc("/api/cleanup/run", w.handleCleanupRun)
+	mux.HandleFunc("/api/cleanup/file", w.handleCleanupFile)
 	mux.HandleFunc("/api/tasks", w.handleTasks)
 	mux.HandleFunc("/api/precheck", w.handlePrecheck)
 

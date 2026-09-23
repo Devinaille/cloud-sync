@@ -808,3 +808,83 @@ func TestAPI_ConfigRegenerate(t *testing.T) {
 		t.Errorf("regenerated yaml missing openlist_url:\n%s", cfgResp.YAML)
 	}
 }
+
+func TestAPI_CleanupFile(t *testing.T) {
+	env := newTestSupervisor(t)
+	_, st, _, ok := env.sup.Snapshot()
+	if !ok {
+		t.Fatal("no state")
+	}
+	src := filepath.Join(env.watch, "Movies", "Manual.mkv")
+	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, make([]byte, 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write(&state.StatusRecord{
+		Key: "Movies/Manual.mkv", SrcPath: src, SyncedAt: time.Now().UTC(), Status: "synced",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := env.server(t)
+	var resp struct {
+		OK     bool `json:"ok"`
+		DryRun bool `json:"dry_run"`
+	}
+	if code := doJSON(t, http.MethodPost, srv.URL+"/api/cleanup/file",
+		map[string]string{"key": "Movies/Manual.mkv"}, &resp); code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", code)
+	}
+	if !resp.OK {
+		t.Error("ok = false")
+	}
+}
+
+func TestAPI_CleanupFile_RejectsNonSynced(t *testing.T) {
+	env := newTestSupervisor(t)
+	srv := env.server(t)
+	code := doJSON(t, http.MethodPost, srv.URL+"/api/cleanup/file",
+		map[string]string{"key": "nope.mkv"}, nil)
+	if code != http.StatusBadRequest {
+		t.Fatalf("code = %d, want 400", code)
+	}
+}
+
+func TestAPI_Files_CleanupAtLive(t *testing.T) {
+	env := newTestSupervisor(t)
+	_, st, _, ok := env.sup.Snapshot()
+	if !ok {
+		t.Fatal("no state")
+	}
+	synced := time.Now().UTC().Add(-time.Hour)
+	if err := st.Write(&state.StatusRecord{
+		Key: "Live.mkv", SrcPath: filepath.Join(env.watch, "Live.mkv"),
+		SyncedAt: synced, Status: "synced",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	srv := env.server(t)
+	var body filesResponse
+	if code := getJSON(t, srv.URL+"/api/files?state=synced", &body); code != http.StatusOK {
+		t.Fatalf("code = %d", code)
+	}
+	var want string
+	for _, it := range body.Items {
+		if it.Key == "Live.mkv" {
+			want = it.CleanupAt
+		}
+	}
+	if want == "" {
+		t.Fatal("Live.mkv not found")
+	}
+	got, err := time.Parse(time.RFC3339, want)
+	if err != nil {
+		t.Fatalf("cleanup_at %q: %v", want, err)
+	}
+	exp := synced.Add(72 * time.Hour) // testutil.TestConfig uses CleanupAfter=72h
+	if got.Sub(exp).Abs() > time.Minute {
+		t.Errorf("cleanup_at = %v, want ~%v", got, exp)
+	}
+}
