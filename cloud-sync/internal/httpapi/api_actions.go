@@ -171,3 +171,22 @@ func (w *WebServer) handleCleanupFile(rw http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(rw, http.StatusOK, map[string]any{"ok": true, "dry_run": dryRun})
 }
+
+// handleRescan reconciles "cleaned" records whose local file is still present.
+func (w *WebServer) handleRescan(rw http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(rw, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	cl := w.sup.Cleanup()
+	if cl == nil {
+		writeError(rw, http.StatusServiceUnavailable, "supervisor not running")
+		return
+	}
+	rep, err := cl.Rescan(r.Context())
+	if err != nil {
+		writeError(rw, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(rw, http.StatusOK, rep)
+}

@@ -888,3 +888,36 @@ func TestAPI_Files_CleanupAtLive(t *testing.T) {
 		t.Errorf("cleanup_at = %v, want ~%v", got, exp)
 	}
 }
+
+func TestAPI_Rescan(t *testing.T) {
+	env := newTestSupervisor(t)
+	_, st, _, ok := env.sup.Snapshot()
+	if !ok {
+		t.Fatal("no state")
+	}
+	src := filepath.Join(env.watch, "Res.mkv")
+	if err := os.WriteFile(src, make([]byte, 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write(&state.StatusRecord{
+		Key: "Res.mkv", SrcPath: src, SrcSize: info.Size(), SrcMtime: info.ModTime().UTC(),
+		SyncedAt: time.Now().UTC(), Status: "cleaned",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := env.server(t)
+	var rep struct {
+		Restored int `json:"restored"`
+	}
+	if code := doJSON(t, http.MethodPost, srv.URL+"/api/rescan", nil, &rep); code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", code)
+	}
+	if rep.Restored != 1 {
+		t.Fatalf("restored = %d, want 1", rep.Restored)
+	}
+}
