@@ -216,3 +216,102 @@ func TestCleanup_CleanKeyRejectsNonSynced(t *testing.T) {
 		t.Error("CleanKey(missing) = nil, want error")
 	}
 }
+
+func TestCleanup_RescanRestoresCleanedWithLocalFile(t *testing.T) {
+	cl, st, mediaDir := newTestCleanup(t, false)
+	src := filepath.Join(mediaDir, "Movies", "R.mkv")
+	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, make([]byte, 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write(&state.StatusRecord{
+		Key: "Movies/R.mkv", SrcPath: src, SrcSize: info.Size(), SrcMtime: info.ModTime().UTC(),
+		SyncedAt: time.Now().UTC(), Status: "cleaned",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := cl.Rescan(context.Background())
+	if err != nil {
+		t.Fatalf("Rescan: %v", err)
+	}
+	if rep.Restored != 1 {
+		t.Fatalf("restored = %d, want 1 (report %+v)", rep.Restored, rep)
+	}
+	rec, _ := st.Get("Movies/R.mkv")
+	if rec == nil || rec.Status != "synced" {
+		t.Fatalf("record = %+v, want status synced", rec)
+	}
+	if _, err := os.Stat(src); err != nil {
+		t.Errorf("rescan must not delete: %v", err)
+	}
+}
+
+func TestCleanup_RescanSkipsChangedFile(t *testing.T) {
+	cl, st, mediaDir := newTestCleanup(t, false)
+	src := filepath.Join(mediaDir, "Changed.mkv")
+	if err := os.WriteFile(src, make([]byte, 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, _ := os.Stat(src)
+	if err := st.Write(&state.StatusRecord{
+		Key: "Changed.mkv", SrcPath: src, SrcSize: info.Size() + 1, SrcMtime: info.ModTime().UTC(),
+		SyncedAt: time.Now().UTC(), Status: "cleaned",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := cl.Rescan(context.Background())
+	if err != nil {
+		t.Fatalf("Rescan: %v", err)
+	}
+	if rep.SkippedChanged != 1 || rep.Restored != 0 {
+		t.Fatalf("report = %+v, want skipped_changed=1 restored=0", rep)
+	}
+	if rec, _ := st.Get("Changed.mkv"); rec == nil || rec.Status != "cleaned" {
+		t.Fatalf("record = %+v, want still cleaned", rec)
+	}
+}
+
+func TestCleanup_RescanSkipsMissingFile(t *testing.T) {
+	cl, st, mediaDir := newTestCleanup(t, false)
+	if err := st.Write(&state.StatusRecord{
+		Key: "Gone.mkv", SrcPath: filepath.Join(mediaDir, "Gone.mkv"),
+		SyncedAt: time.Now().UTC(), Status: "cleaned",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := cl.Rescan(context.Background())
+	if err != nil {
+		t.Fatalf("Rescan: %v", err)
+	}
+	if rep.StillClean != 1 || rep.Restored != 0 {
+		t.Fatalf("report = %+v, want still_clean=1 restored=0", rep)
+	}
+}
+
+func TestCleanup_TickKeepsSyncedWhenDeleteFails(t *testing.T) {
+	cl, st, mediaDir := newTestCleanup(t, false)
+	// A non-empty directory at the video path makes os.Remove fail.
+	dir := filepath.Join(mediaDir, "D.mkv")
+	if err := os.MkdirAll(filepath.Join(dir, "inner"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().UTC().Add(-100 * time.Hour)
+	if err := st.Write(&state.StatusRecord{
+		Key: "D.mkv", SrcPath: dir, SyncedAt: old, Status: "synced",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cl.Tick(context.Background(), time.Now().UTC()); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+	if rec, _ := st.Get("D.mkv"); rec == nil || rec.Status != "synced" {
+		t.Fatalf("record = %+v, want still synced after failed delete", rec)
+	}
+}
