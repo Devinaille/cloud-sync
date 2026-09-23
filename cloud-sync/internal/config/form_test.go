@@ -18,7 +18,7 @@ func preserveEnv(t *testing.T) {
 		"CLEANUP_AFTER_HOURS", "UPLOAD_CONCURRENCY", "STABILIZE_WAIT_SECONDS",
 		"POLL_INTERVAL_SECONDS", "TASK_TIMEOUT_SECONDS", "LOG_LEVEL", "LOG_FILE",
 		"UI_LISTEN", "CLEANUP_DRY_RUN", "OPENLIST_OVERWRITE",
-		"TASKS_ENABLED", "ALLOWED_SOURCE_PREFIXES",
+		"TASKS_ENABLED", "ALLOWED_SOURCE_PREFIXES", "CLEANUP_INTERVAL_SECONDS",
 	} {
 		t.Setenv(k, os.Getenv(k))
 	}
@@ -28,20 +28,21 @@ func fullForm(t *testing.T) FormValues {
 	t.Helper()
 	dir := t.TempDir()
 	return FormValues{
-		OpenListURL:           "http://openlist:5244",
-		OpenListToken:         "new-token",
-		OpenListSrcStorage:    "/local_media",
-		OpenListDstStorage:    "/139yun_media",
-		WatchDirs:             []string{dir},
-		SyncStatusDir:         filepath.Join(dir, ".sync_status"),
-		AllowedSourcePrefixes: []string{dir},
-		CleanupAfterHours:     72,
-		UploadConcurrency:     2,
-		StabilizeWaitSeconds:  30,
-		PollIntervalSeconds:   3,
-		TaskTimeoutSeconds:    1800,
-		LogLevel:              "info",
-		UIListen:              ":8099",
+		OpenListURL:            "http://openlist:5244",
+		OpenListToken:          "new-token",
+		OpenListSrcStorage:     "/local_media",
+		OpenListDstStorage:     "/139yun_media",
+		WatchDirs:              []string{dir},
+		SyncStatusDir:          filepath.Join(dir, ".sync_status"),
+		AllowedSourcePrefixes:  []string{dir},
+		CleanupAfterHours:      72,
+		CleanupIntervalSeconds: 3600,
+		UploadConcurrency:      2,
+		StabilizeWaitSeconds:   30,
+		PollIntervalSeconds:    3,
+		TaskTimeoutSeconds:     1800,
+		LogLevel:               "info",
+		UIListen:               ":8099",
 	}
 }
 
@@ -160,6 +161,7 @@ func TestRender_ParsesAndHasComments(t *testing.T) {
 		AllowedPrefixes: []string{dir}, CleanupAfter: 72 * time.Hour,
 		UploadConcurrency: 2, StabilizeWait: 30 * time.Second, PollInterval: 3 * time.Second,
 		TaskTimeout: 1800 * time.Second, LogLevel: "info", UIListen: ":8099",
+		CleanupInterval: 3600 * time.Second,
 	}
 	out, err := Render(cfg)
 	if err != nil {
@@ -174,5 +176,22 @@ func TestRender_ParsesAndHasComments(t *testing.T) {
 	}
 	if _, err := Load(path); err != nil {
 		t.Fatalf("Load(Render output): %v", err)
+	}
+}
+
+func TestMergeAndSave_CleanupInterval(t *testing.T) {
+	preserveEnv(t)
+	path := filepath.Join(t.TempDir(), "cloud-sync.yaml")
+	v := fullForm(t)
+	v.CleanupIntervalSeconds = 600
+	if err := MergeAndSave(path, v); err != nil {
+		t.Fatalf("MergeAndSave: %v", err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.CleanupInterval != 600*time.Second {
+		t.Errorf("CleanupInterval = %v, want 600s", got.CleanupInterval)
 	}
 }

@@ -30,24 +30,25 @@ func IsValidationError(err error) bool {
 // Field names mirror the on-disk YAML keys. OpenListToken is left zero when the
 // caller wants to keep the existing token.
 type FormValues struct {
-	OpenListURL           string   `json:"openlist_url"`
-	OpenListToken         string   `json:"openlist_token,omitempty"`
-	OpenListSrcStorage    string   `json:"openlist_src_storage"`
-	OpenListDstStorage    string   `json:"openlist_dst_storage"`
-	OpenListOverwrite     bool     `json:"openlist_overwrite"`
-	UIListen              string   `json:"ui_listen"`
-	TasksEnabled          bool     `json:"tasks_enabled"`
-	WatchDirs             []string `json:"watch_dirs"`
-	SyncStatusDir         string   `json:"sync_status_dir"`
-	AllowedSourcePrefixes []string `json:"allowed_source_prefixes"`
-	CleanupAfterHours     int      `json:"cleanup_after_hours"`
-	CleanupDryRun         bool     `json:"cleanup_dry_run"`
-	UploadConcurrency     int      `json:"upload_concurrency"`
-	StabilizeWaitSeconds  int      `json:"stabilize_wait_seconds"`
-	PollIntervalSeconds   int      `json:"poll_interval_seconds"`
-	TaskTimeoutSeconds    int      `json:"task_timeout_seconds"`
-	LogLevel              string   `json:"log_level"`
-	LogFile               string   `json:"log_file"`
+	OpenListURL            string   `json:"openlist_url"`
+	OpenListToken          string   `json:"openlist_token,omitempty"`
+	OpenListSrcStorage     string   `json:"openlist_src_storage"`
+	OpenListDstStorage     string   `json:"openlist_dst_storage"`
+	OpenListOverwrite      bool     `json:"openlist_overwrite"`
+	UIListen               string   `json:"ui_listen"`
+	TasksEnabled           bool     `json:"tasks_enabled"`
+	WatchDirs              []string `json:"watch_dirs"`
+	SyncStatusDir          string   `json:"sync_status_dir"`
+	AllowedSourcePrefixes  []string `json:"allowed_source_prefixes"`
+	CleanupAfterHours      int      `json:"cleanup_after_hours"`
+	CleanupDryRun          bool     `json:"cleanup_dry_run"`
+	CleanupIntervalSeconds int      `json:"cleanup_interval_seconds"`
+	UploadConcurrency      int      `json:"upload_concurrency"`
+	StabilizeWaitSeconds   int      `json:"stabilize_wait_seconds"`
+	PollIntervalSeconds    int      `json:"poll_interval_seconds"`
+	TaskTimeoutSeconds     int      `json:"task_timeout_seconds"`
+	LogLevel               string   `json:"log_level"`
+	LogFile                string   `json:"log_file"`
 }
 
 // Values projects the effective config into the form shape. The token is
@@ -55,23 +56,24 @@ type FormValues struct {
 // whether one is set via Config.OpenListToken != "".
 func Values(cfg *Config) FormValues {
 	return FormValues{
-		OpenListURL:           cfg.OpenListURL,
-		OpenListSrcStorage:    cfg.SrcStorage,
-		OpenListDstStorage:    cfg.DstStorage,
-		OpenListOverwrite:     cfg.OpenListOverwrite,
-		UIListen:              cfg.UIListen,
-		TasksEnabled:          cfg.TasksEnabled,
-		WatchDirs:             cfg.WatchDirs,
-		SyncStatusDir:         cfg.SyncStatusDir,
-		AllowedSourcePrefixes: cfg.AllowedPrefixes,
-		CleanupAfterHours:     int(cfg.CleanupAfter / time.Hour),
-		CleanupDryRun:         cfg.CleanupDryRun,
-		UploadConcurrency:     cfg.UploadConcurrency,
-		StabilizeWaitSeconds:  int(cfg.StabilizeWait / time.Second),
-		PollIntervalSeconds:   int(cfg.PollInterval / time.Second),
-		TaskTimeoutSeconds:    int(cfg.TaskTimeout / time.Second),
-		LogLevel:              cfg.LogLevel,
-		LogFile:               cfg.LogFile,
+		OpenListURL:            cfg.OpenListURL,
+		OpenListSrcStorage:     cfg.SrcStorage,
+		OpenListDstStorage:     cfg.DstStorage,
+		OpenListOverwrite:      cfg.OpenListOverwrite,
+		UIListen:               cfg.UIListen,
+		TasksEnabled:           cfg.TasksEnabled,
+		WatchDirs:              cfg.WatchDirs,
+		SyncStatusDir:          cfg.SyncStatusDir,
+		AllowedSourcePrefixes:  cfg.AllowedPrefixes,
+		CleanupAfterHours:      int(cfg.CleanupAfter / time.Hour),
+		CleanupDryRun:          cfg.CleanupDryRun,
+		CleanupIntervalSeconds: int(cfg.CleanupInterval / time.Second),
+		UploadConcurrency:      cfg.UploadConcurrency,
+		StabilizeWaitSeconds:   int(cfg.StabilizeWait / time.Second),
+		PollIntervalSeconds:    int(cfg.PollInterval / time.Second),
+		TaskTimeoutSeconds:     int(cfg.TaskTimeout / time.Second),
+		LogLevel:               cfg.LogLevel,
+		LogFile:                cfg.LogFile,
 	}
 }
 
@@ -125,6 +127,7 @@ func MergeAndSave(path string, v FormValues) error {
 	setSequence(root, "allowed_source_prefixes", v.AllowedSourcePrefixes)
 	setInt(root, "cleanup_after_hours", v.CleanupAfterHours)
 	setBool(root, "cleanup_dry_run", v.CleanupDryRun)
+	setInt(root, "cleanup_interval_seconds", v.CleanupIntervalSeconds)
 	setInt(root, "upload_concurrency", v.UploadConcurrency)
 	setInt(root, "stabilize_wait_seconds", v.StabilizeWaitSeconds)
 	setInt(root, "poll_interval_seconds", v.PollIntervalSeconds)
@@ -180,6 +183,7 @@ func Render(cfg *Config) ([]byte, error) {
 	fmt.Fprintf(&b, "\n# Cleanup policy.\n")
 	fmt.Fprintf(&b, "cleanup_after_hours: %d\n", int(cfg.CleanupAfter/time.Hour))
 	fmt.Fprintf(&b, "cleanup_dry_run: %t\n", cfg.CleanupDryRun)
+	fmt.Fprintf(&b, "cleanup_interval_seconds: %d\n", int(cfg.CleanupInterval/time.Second))
 
 	fmt.Fprintf(&b, "\n# Upload pipeline.\n")
 	fmt.Fprintf(&b, "upload_concurrency: %d\n", cfg.UploadConcurrency)
