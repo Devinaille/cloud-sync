@@ -322,6 +322,7 @@ YAML 与 env 同名（小写 ↔ 大写）。下表是底层 env 名：
 | 重传同一个文件，云端内容没变 | 默认 `OPENLIST_OVERWRITE=false` → `skip_existing=true`，目标已存在就跳过。要覆盖：把配置文件的 `openlist_overwrite` 改为 `true`（或删掉该 key 再用 env `OPENLIST_OVERWRITE=true`——**文件值优先于 env**）。 |
 | `code=403 msg=file [X] exists` | 客户端同时发了 `overwrite=false` + `skip_existing=false`（不该发生；检查配置）。 |
 | 文件改了但容器还是旧值 | 配置文件是挂载的（`:rw`），改完主机文件后 `docker compose restart cloud-sync`，不是 `up`（或用 Web UI 的 Save & Reload 热重载）。 |
+| 本地文件还在但状态是 `cleaned` | 旧版本删除失败时仍会标记 `cleaned`。Dashboard「Rescan state」会把这批（本地 size/mtime 与记录一致）记录恢复为 `synced`，之后清理会把它们删掉；新版本删除失败已不再标记 `cleaned`。 |
 | UI 打不开 | `UI_LISTEN` 为空/`-` 被禁用、端口未映射（compose `ports`）、或进程未监听（日志里找 `web ui listening`）。 |
 
 ## 开源协议

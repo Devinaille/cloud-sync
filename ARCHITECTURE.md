@@ -498,6 +498,8 @@ for record in scan(.sync_status/<today_minus_3d>):
 - **间隔可配**：`CLEANUP_INTERVAL_SECONDS`（默认 3600，最小 300）
 - **dry-run 模式**：上线前先跑 24h dry-run 日志
 - **删除限制**：单次最多清理 50 个文件，避免误删风暴
+- **删除失败不标记**：`os.Remove` 失败时记录保持 `synced`，下个 tick 重试（不会出现"本地还在却 cleaned"）
+- **状态重扫**：`POST /api/rescan`（Dashboard「Rescan state」）把 `cleaned` 但本地仍在（size/mtime 与记录一致）的记录恢复为 `synced`，交回清理；内容已变/本地缺失的跳过
 - **手动清理**：Web UI 文件明细每行「清理」按钮（仅 `synced`，遵守 dry-run）
 - **告警**：每次清理动作都写日志，异常立即推送
 
