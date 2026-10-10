@@ -1,0 +1,23 @@
+name: Go check
+description: gofmt, go vet and go test for the cloud-sync module
+inputs:
+  working-directory:
+    description: Module directory
+    required: false
+    default: cloud-sync
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+        cache: true
+        cache-dependency-path: cloud-sync/go.sum
+    - name: gofmt / vet / test
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        gofmt -l . | tee /tmp/fmt
+        test ! -s /tmp/fmt
+        go vet ./...
+        go test -race -count=1 ./...

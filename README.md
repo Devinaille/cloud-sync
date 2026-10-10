@@ -325,8 +325,10 @@ git tag v0.1.0-rc2 && git push origin v0.1.0-rc2   # rc（在 main 上打 tag）
 | 类型 | tag 形式 | workflow | 说明 |
 |---|---|---|---|
 | 开发版 | `dev` / `dev-<时间戳>` / `sha-<sha>-dev` | [`dev.yml`](./.github/workflows/dev.yml) | 每次 push `dev` 构建；不创建 Release |
-| 候选版 | `v1.0.0-rc1`（含 `-rc`） | [`rc.yml`](./.github/workflows/rc.yml) | 创建 **pre-release**；镜像打 `<tag>` 和 `<tag>-<时间戳>`，不动 `latest` |
+| 候选版 | `v1.0.0-rc1`（含 `-rc`） | [`release.yml`](./.github/workflows/release.yml) | 创建 **pre-release**；镜像打 `<tag>` 和 `<tag>-<时间戳>`，不动 `latest` |
 | 正式版 | `v1.0.0` | [`release.yml`](./.github/workflows/release.yml) | 创建正式 Release；镜像打 `<tag>`、`<tag>-<时间戳>` 和 `latest` |
+
+> 候选版与正式版由**同一个 `release.yml`** 处理（按 tag 是否含 `-rc` 分流）；公共步骤（setup-go、gofmt/vet/test、构建二进制、推送镜像）抽成 `.github/actions/{go-check,build-binary,push-image}` 复合 action。
 
 构建时会把 version/commit/build-time 通过 `-ldflags` 打进二进制：启动日志里有 `version/commit/build_time`，Web UI Dashboard 的「版本」也显示，`GET /api/status` 返回 `version`/`commit`/`build_time`——用来确认容器跑的是哪个构建。**界面显示的版本号即镜像 tag**：rc/release 取 `<tag>`（如 `v0.1.0-rc1`），dev 取 `dev-<时间戳>`（与 `:dev-<时间戳>` 这个可拉取 tag 完全对应）；两者都额外打一个带时间戳的 tag。
 

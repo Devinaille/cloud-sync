@@ -1,0 +1,26 @@
+name: Build binary
+description: Build the static linux/amd64 cloud-sync binary with embedded build info
+inputs:
+  version:
+    description: Embedded version string
+    required: true
+  commit:
+    description: Embedded commit sha
+    required: true
+  build-time:
+    description: Embedded RFC3339 build time
+    required: true
+  working-directory:
+    description: Module directory
+    required: false
+    default: cloud-sync
+runs:
+  using: composite
+  steps:
+    - name: build (linux/amd64)
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+          -ldflags="-s -w -X cloud-sync/internal/buildinfo.Version=${{ inputs.version }} -X cloud-sync/internal/buildinfo.Commit=${{ inputs.commit }} -X cloud-sync/internal/buildinfo.BuildTime=${{ inputs.build-time }}" \
+          -o cloud-sync .

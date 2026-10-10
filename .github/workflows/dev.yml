@@ -1,9 +1,9 @@
 # Development builds.
 #
-# Runs on every push to the `dev` branch: format/vet/test, build a static
-# linux/amd64 binary, and publish container images tagged with a "-dev" suffix.
-# No GitHub Release is created. Release candidates and releases are cut from
-# `main` only (see rc.yml / release.yml).
+# Runs on every push to the `dev` branch: format/vet/test (shared go-check
+# action), build a static linux/amd64 binary, and publish container images
+# tagged with a "-dev" suffix. No GitHub Release is created. Release candidates
+# and releases are cut from `main` only (see release.yml).
 #
 # Image tags:
 #   ghcr.io/devinaille/cloud-sync:dev
@@ -33,21 +33,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-          cache: true
-          cache-dependency-path: cloud-sync/go.sum
-
-      - name: gofmt / vet / test
-        working-directory: cloud-sync
-        run: |
-          gofmt -l . | tee /tmp/fmt
-          test ! -s /tmp/fmt
-          go vet ./...
-          go test -race -count=1 ./...
-
       - name: Build metadata
         id: sha
         run: |
@@ -55,12 +40,13 @@ jobs:
           echo "stamp=$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
           echo "iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
-      - name: Build (linux/amd64)
-        working-directory: cloud-sync
-        run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
-            -ldflags="-s -w -X cloud-sync/internal/buildinfo.Version=dev-${{ steps.sha.outputs.stamp }} -X cloud-sync/internal/buildinfo.Commit=${GITHUB_SHA} -X cloud-sync/internal/buildinfo.BuildTime=${{ steps.sha.outputs.iso }}" \
-            -o cloud-sync .
+      - uses: ./.github/actions/go-check
+
+      - uses: ./.github/actions/build-binary
+        with:
+          version: dev-${{ steps.sha.outputs.stamp }}
+          commit: ${{ github.sha }}
+          build-time: ${{ steps.sha.outputs.iso }}
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
@@ -69,34 +55,22 @@ jobs:
           path: cloud-sync/cloud-sync
           if-no-files-found: error
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Compute image tags
+        id: tags
+        run: |
+          {
+            echo "${{ env.IMAGE }}:dev"
+            echo "${{ env.IMAGE }}:dev-${{ steps.sha.outputs.stamp }}"
+            echo "${{ env.IMAGE }}:sha-${{ steps.sha.outputs.short }}-dev"
+          } > "$RUNNER_TEMP/tags.txt"
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/tags.txt" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
-      - name: Log in to ghcr.io
-        uses: docker/login-action@v3
+      - uses: ./.github/actions/push-image
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push dev image
-        uses: docker/build-push-action@v6
-        with:
-          context: cloud-sync
-          file: cloud-sync/Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ${{ env.IMAGE }}:dev
-            ${{ env.IMAGE }}:dev-${{ steps.sha.outputs.stamp }}
-            ${{ env.IMAGE }}:sha-${{ steps.sha.outputs.short }}-dev
-          build-args: |
-            VERSION=dev-${{ steps.sha.outputs.stamp }}
-            COMMIT=${{ github.sha }}
-            BUILD_TIME=${{ steps.sha.outputs.iso }}
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.version=dev-${{ steps.sha.outputs.stamp }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.tags.outputs.tags }}
+          version: dev-${{ steps.sha.outputs.stamp }}
+          commit: ${{ github.sha }}
+          build-time: ${{ steps.sha.outputs.iso }}
+          token: ${{ secrets.GITHUB_TOKEN }}

@@ -1,12 +1,15 @@
-# Full release packaging.
+# Release packaging (release candidates and full releases).
 #
-# Triggers on tags matching v* that do NOT contain "-rc" (rc tags are handled by
-# rc.yml), or manual dispatch.
+# Triggers on any v* tag, or manual dispatch with an explicit tag. A tag whose
+# name contains "-rc" (e.g. v1.0.0-rc1) is published as a GitHub pre-release and
+# does NOT move :latest; any other tag (e.g. v1.0.0) is a full release and also
+# updates :latest.
+#
 # Produces:
 #   - a GitHub release with cloud-sync_<tag>_linux_amd64.tar.gz + SHA256SUMS
-#   - ghcr.io/devinaille/cloud-sync:<tag> and :latest
+#   - ghcr.io/devinaille/cloud-sync:<tag>, :<tag>-<stamp> (+ :latest for full)
 #
-# For release candidates, see rc.yml.
+# The tag commit must be an ancestor of main (cut from main after merging dev).
 
 name: Release
 
@@ -17,8 +20,12 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag to (re)build as a full release (e.g. v1.0.0)'
+        description: 'Existing tag to (re)build (e.g. v1.0.0-rc1 or v1.0.0)'
         required: true
+      prerelease:
+        description: 'Publish as a pre-release (no :latest)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -29,23 +36,34 @@ env:
 
 jobs:
   package:
-    # Skip rc tags on push (rc.yml owns those); always run for manual dispatch.
-    if: ${{ github.event_name != 'push' || !contains(github.ref_name, '-rc') }}
     name: build + release
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.ver.outputs.tag }}
+      commit: ${{ steps.ver.outputs.commit }}
+      stamp: ${{ steps.ver.outputs.stamp }}
+      iso: ${{ steps.ver.outputs.iso }}
+      isrc: ${{ steps.ver.outputs.isrc }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
           fetch-depth: 0
 
-      - name: Resolve tag
+      - name: Resolve build metadata
         id: ver
         run: |
-          echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            case "$tag" in *-rc*) isrc=true;; *) isrc="${{ inputs.prerelease }}";; esac
+          else
+            case "$tag" in *-rc*) isrc=true;; *) isrc=false;; esac
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "stamp=$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
           echo "iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          echo "isrc=$isrc" >> "$GITHUB_OUTPUT"
 
       - name: Ensure tag is on main
         run: |
@@ -55,27 +73,13 @@ jobs:
             exit 1
           fi
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: ./.github/actions/go-check
+
+      - uses: ./.github/actions/build-binary
         with:
-          go-version: '1.22'
-          cache: true
-          cache-dependency-path: cloud-sync/go.sum
-
-      - name: gofmt / vet / test
-        working-directory: cloud-sync
-        run: |
-          gofmt -l . | tee /tmp/fmt
-          test ! -s /tmp/fmt
-          go vet ./...
-          go test -race -count=1 ./...
-
-      - name: Build (linux/amd64)
-        working-directory: cloud-sync
-        run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
-            -ldflags="-s -w -X cloud-sync/internal/buildinfo.Version=${{ steps.ver.outputs.tag }} -X cloud-sync/internal/buildinfo.Commit=${{ steps.ver.outputs.commit }} -X cloud-sync/internal/buildinfo.BuildTime=${{ steps.ver.outputs.iso }}" \
-            -o cloud-sync .
+          version: ${{ steps.ver.outputs.tag }}
+          commit: ${{ steps.ver.outputs.commit }}
+          build-time: ${{ steps.ver.outputs.iso }}
 
       - name: Package tarball + checksums
         run: |
@@ -95,14 +99,14 @@ jobs:
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: ${{ steps.ver.outputs.tag }}
-          prerelease: false
+          prerelease: ${{ steps.ver.outputs.isrc == 'true' }}
           generate_release_notes: true
           files: |
             dist/*.tar.gz
             dist/SHA256SUMS
 
   docker:
-    name: push release image
+    name: push image
     needs: package
     runs-on: ubuntu-latest
     steps:
@@ -110,40 +114,24 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
-      - name: Resolve tag
-        id: ver
+      - name: Compute image tags
+        id: tags
         run: |
-          echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
-          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          echo "stamp=$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
-          echo "iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          {
+            echo "${{ env.IMAGE }}:${{ needs.package.outputs.tag }}"
+            echo "${{ env.IMAGE }}:${{ needs.package.outputs.tag }}-${{ needs.package.outputs.stamp }}"
+            if [ "${{ needs.package.outputs.isrc }}" != "true" ]; then
+              echo "${{ env.IMAGE }}:latest"
+            fi
+          } > "$RUNNER_TEMP/tags.txt"
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/tags.txt" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Log in to ghcr.io
-        uses: docker/login-action@v3
+      - uses: ./.github/actions/push-image
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: cloud-sync
-          file: cloud-sync/Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ${{ env.IMAGE }}:${{ steps.ver.outputs.tag }}
-            ${{ env.IMAGE }}:${{ steps.ver.outputs.tag }}-${{ steps.ver.outputs.stamp }}
-            ${{ env.IMAGE }}:latest
-          build-args: |
-            VERSION=${{ steps.ver.outputs.tag }}
-            COMMIT=${{ steps.ver.outputs.commit }}
-            BUILD_TIME=${{ steps.ver.outputs.iso }}
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.version=${{ steps.ver.outputs.tag }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.tags.outputs.tags }}
+          version: ${{ needs.package.outputs.tag }}
+          commit: ${{ needs.package.outputs.commit }}
+          build-time: ${{ needs.package.outputs.iso }}
+          token: ${{ secrets.GITHUB_TOKEN }}

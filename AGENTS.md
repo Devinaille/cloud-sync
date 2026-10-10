@@ -49,7 +49,7 @@ CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o cloud-sync .
 ## Branch & release flow
 
 - All development happens on `dev`. Push to `dev` → `dev.yml` runs gofmt/vet/test and pushes `:dev`, `:dev-<stamp>`, `:sha-<short>-dev`; the embedded version is `dev-<stamp>`.
-- `rc.yml`/`release.yml` are tag-triggered and **fail unless the tag commit is an ancestor of `main`**. To cut one: merge `dev` into `main`, then `git tag v0.1.0-rcN && git push origin v0.1.0-rcN` (rc) or `v1.0.0` (release). `ci.yml` runs on push to `main` and PRs to `main`/`dev`.
+- `release.yml` is tag-triggered (`v*`) and handles **both** rc and full releases (a tag containing `-rc` is a pre-release and does not move `:latest`), and **fails unless the tag commit is an ancestor of `main`**. To cut one: merge `dev` into `main`, then `git tag v0.1.0-rcN && git push origin v0.1.0-rcN` (rc) or `v1.0.0` (release). `ci.yml` runs on push to `main` and PRs to `main`/`dev`. Shared workflow steps live in `.github/actions/{go-check,build-binary,push-image}` composite actions — edit those, not the workflows, when changing gofmt/vet/test or the build/push steps.
 - Deploys select the image with `CLOUD_SYNC_TAG` (default `latest`, which is stale — use `:dev` or an immutable `sha-…-dev`/`vX.Y.Z-rcN`). Compose uses `pull_policy: always`; `docker-compose.build.yml` builds a local `cloud-sync:dev` and needs `--build`.
 - Image must stay < 30 MiB (distroless); CI enforces this, so avoid heavy new deps/embedded assets.
 

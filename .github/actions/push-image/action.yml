@@ -1,0 +1,45 @@
+name: Push image
+description: Build and push the cloud-sync container image to ghcr.io
+inputs:
+  tags:
+    description: Newline-separated image references to push
+    required: true
+  version:
+    description: Embedded version (also the OCI version label)
+    required: true
+  commit:
+    description: Embedded commit sha
+    required: true
+  build-time:
+    description: Embedded RFC3339 build time
+    required: true
+  token:
+    description: Registry password (pass secrets.GITHUB_TOKEN)
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: docker/setup-buildx-action@v3
+    - name: Log in to ghcr.io
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.token }}
+    - name: Build and push
+      uses: docker/build-push-action@v6
+      with:
+        context: cloud-sync
+        file: cloud-sync/Dockerfile
+        platforms: linux/amd64
+        push: true
+        tags: ${{ inputs.tags }}
+        build-args: |
+          VERSION=${{ inputs.version }}
+          COMMIT=${{ inputs.commit }}
+          BUILD_TIME=${{ inputs.build-time }}
+        labels: |
+          org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          org.opencontainers.image.version=${{ inputs.version }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
